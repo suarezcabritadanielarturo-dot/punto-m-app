@@ -18,14 +18,12 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [isRegistering, setIsRegistering] = useState(false);
   
-  // Campos del formulario
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
   const [infoMsg, setInfoMsg] = useState('');
 
   useEffect(() => {
-    // Detectar resultado de redirección de Google al cargar
     getRedirectResult(auth)
       .then((result) => {
         if (result?.user) {
@@ -36,7 +34,6 @@ export default function App() {
         setErrorMsg("Error al autenticar con Google: " + err.message);
       });
 
-    // Escuchar el estado de la sesión
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
       setLoading(false);
@@ -45,7 +42,6 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  // Iniciar sesión / Registro con Google
   const handleGoogleLogin = async () => {
     setErrorMsg('');
     try {
@@ -55,7 +51,6 @@ export default function App() {
     }
   };
 
-  // Iniciar sesión con Correo y Contraseña
   const handleEmailAuth = async (e) => {
     e.preventDefault();
     setErrorMsg('');
@@ -95,7 +90,6 @@ export default function App() {
     }
   };
 
-  // Restablecer contraseña
   const handleResetPassword = async () => {
     if (!email) {
       setErrorMsg("Ingresa tu correo en el campo superior para enviarte el enlace de recuperación.");
@@ -110,7 +104,6 @@ export default function App() {
     }
   };
 
-  // Cerrar sesión
   const handleLogout = () => {
     signOut(auth);
   };
@@ -123,7 +116,6 @@ export default function App() {
     );
   }
 
-  // SI EL USUARIO NO HA INICIADO SESIÓN (PANTALLA DE LOGIN/REGISTRO)
   if (!user) {
     return (
       <div style={{ maxWidth: '400px', margin: '40px auto', padding: '24px', fontFamily: 'sans-serif', border: '1px solid #e2e8f0', borderRadius: '12px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)', backgroundColor: '#fff' }}>
@@ -132,11 +124,9 @@ export default function App() {
           {isRegistering ? "Crea tu cuenta para acceder" : "Ingresa para explorar el catálogo"}
         </p>
 
-        {/* Notificaciones de Error / Información */}
         {errorMsg && <div style={{ backgroundColor: '#fef2f2', color: '#dc2626', padding: '10px', borderRadius: '6px', fontSize: '13px', marginBottom: '12px' }}>{errorMsg}</div>}
         {infoMsg && <div style={{ backgroundColor: '#f0fdf4', color: '#16a34a', padding: '10px', borderRadius: '6px', fontSize: '13px', marginBottom: '12px' }}>{infoMsg}</div>}
 
-        {/* Botón de Google */}
         <button 
           onClick={handleGoogleLogin} 
           style={{ width: '100%', padding: '12px', backgroundColor: '#2563eb', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', marginBottom: '16px' }}
@@ -150,7 +140,6 @@ export default function App() {
           <div style={{ flex: 1, borderBottom: '1px solid #e2e8f0' }}></div>
         </div>
 
-        {/* Formulario de Correo / Clave */}
         <form onSubmit={handleEmailAuth}>
           <div style={{ marginBottom: '12px' }}>
             <label style={{ display: 'block', fontSize: '12px', fontWeight: 'bold', color: '#334155', marginBottom: '4px' }}>Correo electrónico</label>
@@ -182,7 +171,6 @@ export default function App() {
           </button>
         </form>
 
-        {/* Enlaces de alternancia y recuperación */}
         <div style={{ textAlign: 'center', fontSize: '13px' }}>
           {!isRegistering && (
             <button 
@@ -206,7 +194,6 @@ export default function App() {
     );
   }
 
-  // SI EL USUARIO YA INICIÓ SESIÓN (CATÁLOGO Y PANEL)
   const isAdmin = user.email === ADMIN_EMAIL;
 
   return (
@@ -232,5 +219,10 @@ export default function App() {
         <h2>Catálogo de Productos</h2>
         <p style={{ color: '#64748b' }}>Precios mostrados en Soles (S/).</p>
         
-        {/* Aquí renderizarías tu lista de productos y carrito */}
-        <div style={{ border: '1px
+        <div style={{ border: '1px dashed #cbd5e1', padding: '30px', textAlign: 'center', color: '#94a3b8', borderRadius: '8px' }}>
+          Los productos agregados se mostrarán aquí.
+        </div>
+      </main>
+    </div>
+  );
+}
