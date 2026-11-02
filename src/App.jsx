@@ -19,10 +19,8 @@ import {
   Send
 } from 'lucide-react';
 
-// Correo configurado como Administrador principal único
 const ADMIN_EMAIL = 'suarez.cabrita.daniel.arturo@gmail.com'; 
 
-// Catálogo inicial de muestra (Precios en Soles S/)
 const CATALOGO_INICIAL = [
   { id: 1, nombre: 'Producto A', precio: 25.00, categoria: 'Categoría 1' },
   { id: 2, nombre: 'Producto B', precio: 45.50, categoria: 'Categoría 1' },
@@ -39,7 +37,6 @@ export default function App() {
   const [vistaAdmin, setVistaAdmin] = useState(false);
   const [solicitudEnviada, setSolicitudEnviada] = useState(null);
 
-  // Formulario del Admin para agregar / editar productos
   const [nuevoNombre, setNuevoNombre] = useState('');
   const [nuevoPrecio, setNuevoPrecio] = useState('');
   const [nuevaCategoria, setNuevaCategoria] = useState('');
@@ -58,7 +55,6 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  // Inicio de sesión forzando a Google a mostrar el selector de cuentas
   const handleGoogleLogin = async () => {
     try {
       googleProvider.setCustomParameters({ prompt: 'select_account' });
@@ -72,7 +68,6 @@ export default function App() {
 
   const estaBloqueado = user && usuariosBloqueados.includes(user.email);
 
-  // Lógica del Carrito
   const agregarAlCarrito = (producto) => {
     setCarrito((prev) => {
       const existe = prev.find((item) => item.id === producto.id);
@@ -93,7 +88,6 @@ export default function App() {
     return carrito.reduce((acc, item) => acc + item.precio * item.cantidad, 0).toFixed(2);
   };
 
-  // Creación de Pedido y envío a WhatsApp
   const realizarPedido = () => {
     if (carrito.length === 0) return;
 
@@ -113,27 +107,26 @@ export default function App() {
   };
 
   const enviarWhatsApp = (pedido) => {
-    let mensaje = `*NUEVO PEDIDO - PUNTO M*\n`;
-    mensaje += `*Cliente:* ${pedido.cliente}\n`;
-    mensaje += `*Correo:* ${pedido.email}\n`;
-    mensaje += `*Fecha:* ${pedido.fecha}\n\n`;
-    mensaje += `*LISTA DE PRODUCTOS:*\n`;
+    let mensaje = "*NUEVO PEDIDO - PUNTO M*\n";
+    mensaje += "*Cliente:* " + pedido.cliente + "\n";
+    mensaje += "*Correo:* " + pedido.email + "\n";
+    mensaje += "*Fecha:* " + pedido.fecha + "\n\n";
+    mensaje += "*LISTA DE PRODUCTOS:*\n";
 
     pedido.items.forEach((item) => {
-      mensaje += `• ${item.nombre} x${item.cantidad} - S/ ${(item.precio * item.cantidad).toFixed(2)}\n`;
+      mensaje += "• " + item.nombre + " x" + item.cantidad + " - S/ " + (item.precio * item.cantidad).toFixed(2) + "\n";
     });
 
-    mensaje += `\n*PRECIO TOTAL APROXIMADO: S/ ${pedido.total}*\n\n`;
-    mensaje += `*DATOS PARA PAGO:*\n`;
-    mensaje += `• Yape / Plin: 999-999-999\n`;
-    mensaje += `• Transferencia BCP: 123-4567890-0-99\n`;
-    mensaje += `*Titular:* PUNTO M S.A.C.`;
+    mensaje += "\n*PRECIO TOTAL APROXIMADO: S/ " + pedido.total + "*\n\n";
+    mensaje += "*DATOS PARA PAGO:*\n";
+    mensaje += "• Yape / Plin: 999-999-999\n";
+    mensaje += "• Transferencia BCP: 123-4567890-0-99\n";
+    mensaje += "*Titular:* PUNTO M S.A.C.";
 
-    const url = `https://wa.me/?text=${encodeURIComponent(mensaje)}`;
+    const url = "https://wa.me/?text=" + encodeURIComponent(mensaje);
     window.open(url, '_blank');
   };
 
-  // Lógica del Panel de Administración del Catálogo
   const guardarProducto = (e) => {
     e.preventDefault();
     if (!nuevoNombre || !nuevoPrecio) return;
@@ -172,7 +165,6 @@ export default function App() {
     setCatalogo(catalogo.filter(p => p.id !== id));
   };
 
-  // Lógica de Pedidos y Usuarios en Admin
   const marcarComoPagado = (id) => {
     setPedidos(pedidos.map(p => p.id === id ? { ...p, estado: 'Pagado y Archivada' } : p));
   };
@@ -185,7 +177,6 @@ export default function App() {
     }
   };
 
-  // 1. Pantalla de Inicio de Sesión Obligatorio
   if (!user) {
     return (
       <div className="min-h-screen bg-gray-100 flex flex-col items-center justify-center p-4">
@@ -203,7 +194,6 @@ export default function App() {
     );
   }
 
-  // 2. Pantalla si el usuario está bloqueado por el Admin
   if (estaBloqueado) {
     return (
       <div className="min-h-screen bg-red-50 flex flex-col items-center justify-center p-4">
@@ -219,7 +209,6 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
-      {/* Encabezado */}
       <header className="bg-white border-b px-6 py-4 flex justify-between items-center sticky top-0 z-10 shadow-sm">
         <div>
           <h1 className="text-2xl font-black tracking-wider text-blue-600">PUNTO M</h1>
@@ -240,16 +229,13 @@ export default function App() {
         </div>
       </header>
 
-      {/* Contenido Principal */}
       <main className="flex-1 max-w-6xl w-full mx-auto p-4 md:p-6">
         {vistaAdmin ? (
-          /* PANEL DE ADMINISTRACIÓN */
           <div className="space-y-8">
             <div className="flex justify-between items-center">
               <h2 className="text-2xl font-bold text-gray-800">Panel de Administración General</h2>
             </div>
 
-            {/* SECCIÓN 1: MODIFICAR Y ADMINISTRAR CATÁLOGO */}
             <div className="bg-white p-6 rounded-xl shadow-sm border space-y-4">
               <div className="flex items-center gap-2 border-b pb-3">
                 <Package className="w-5 h-5 text-purple-600" />
@@ -308,7 +294,6 @@ export default function App() {
               </div>
             </div>
 
-            {/* SECCIÓN 2: GESTIÓN DE PEDIDOS Y USUARIOS */}
             <div className="bg-white p-6 rounded-xl shadow-sm border space-y-4">
               <h3 className="text-lg font-bold text-gray-800 border-b pb-3">Historial de Pedidos y Bloqueo de Usuarios</h3>
               <div className="space-y-4">
@@ -342,9 +327,7 @@ export default function App() {
             </div>
           </div>
         ) : (
-          /* VISTA DE CATÁLOGO Y CLIENTES */
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {/* Lista de Productos Dinámica */}
             <div className="md:col-span-2 space-y-4">
               <h2 className="text-xl font-bold text-gray-800">Catálogo de Productos</h2>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -366,7 +349,6 @@ export default function App() {
               </div>
             </div>
 
-            {/* Carrito y Factura */}
             <div className="bg-white p-6 rounded-xl shadow-sm border h-fit space-y-6">
               <div className="flex items-center gap-2 border-b pb-3">
                 <ShoppingCart className="w-5 h-5 text-blue-600" />
@@ -405,7 +387,6 @@ export default function App() {
                 </div>
               )}
 
-              {/* Confirmación e Impresión a WhatsApp */}
               {solicitudEnviada && (
                 <div className="mt-6 p-4 bg-green-50 border border-green-200 rounded-lg space-y-3">
                   <div className="flex items-center gap-2 text-green-800 font-bold text-sm">
