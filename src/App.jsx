@@ -1,23 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  auth, 
-  googleProvider, 
-  signInWithPopup, 
-  signOut, 
-  onAuthStateChanged 
-} from './firebase';
-import { 
-  ShoppingCart, 
-  Trash2, 
-  CheckCircle, 
-  ShieldAlert, 
-  LogOut, 
-  PlusCircle,
-  Package,
-  Edit,
-  Save,
-  Send
-} from 'lucide-react';
+import { auth, googleProvider, signInWithPopup, signOut, onAuthStateChanged } from './firebase';
+import { ShoppingCart, Trash2, CheckCircle, ShieldAlert, LogOut, PlusCircle, Package, Edit, Save, Send } from 'lucide-react';
 
 const ADMIN_EMAIL = 'suarez.cabrita.daniel.arturo@gmail.com'; 
 
