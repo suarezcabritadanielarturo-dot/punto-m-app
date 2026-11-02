@@ -1,380 +1,236 @@
 import React, { useState, useEffect } from 'react';
-import { auth, googleProvider, signInWithPopup, signOut, onAuthStateChanged } from './firebase';
+import { 
+  auth, 
+  googleProvider, 
+  signInWithRedirect, 
+  getRedirectResult,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  sendPasswordResetEmail,
+  signOut,
+  onAuthStateChanged 
+} from './firebase';
 
-const ADMIN_EMAIL = 'suarez.cabrita.daniel.arturo@gmail.com';
-
-const CATALOGO_INICIAL = [
-  { id: 1, nombre: 'Producto A', precio: 25.00, categoria: 'Categoría 1' },
-  { id: 2, nombre: 'Producto B', precio: 45.50, categoria: 'Categoría 1' },
-  { id: 3, nombre: 'Producto C', precio: 12.00, categoria: 'Categoría 2' },
-];
+const ADMIN_EMAIL = "suarez.cabrita.daniel.arturo@gmail.com";
 
 export default function App() {
   const [user, setUser] = useState(null);
-  const [isAdmin, setIsAdmin] = useState(false);
-  const [catalogo, setCatalogo] = useState(CATALOGO_INICIAL);
-  const [carrito, setCarrito] = useState([]);
-  const [pedidos, setPedidos] = useState([]);
-  const [usuariosBloqueados, setUsuariosBloqueados] = useState([]);
-  const [vistaAdmin, setVistaAdmin] = useState(false);
-  const [solicitudEnviada, setSolicitudEnviada] = useState(null);
-
-  const [nuevoNombre, setNuevoNombre] = useState('');
-  const [nuevoPrecio, setNuevoPrecio] = useState('');
-  const [nuevaCategoria, setNuevaCategoria] = useState('');
-  const [productoEditando, setProductoEditando] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [isRegistering, setIsRegistering] = useState(false);
+  
+  // Campos del formulario
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [errorMsg, setErrorMsg] = useState('');
+  const [infoMsg, setInfoMsg] = useState('');
 
   useEffect(() => {
+    // Detectar resultado de redirección de Google al cargar
+    getRedirectResult(auth)
+      .then((result) => {
+        if (result?.user) {
+          setUser(result.user);
+        }
+      })
+      .catch((err) => {
+        setErrorMsg("Error al autenticar con Google: " + err.message);
+      });
+
+    // Escuchar el estado de la sesión
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-      if (currentUser) {
-        setUser(currentUser);
-        setIsAdmin(currentUser.email === ADMIN_EMAIL);
-      } else {
-        setUser(null);
-        setIsAdmin(false);
-      }
+      setUser(currentUser);
+      setLoading(false);
     });
+
     return () => unsubscribe();
   }, []);
 
+  // Iniciar sesión / Registro con Google
   const handleGoogleLogin = async () => {
+    setErrorMsg('');
     try {
-      googleProvider.setCustomParameters({ prompt: 'select_account' });
-      await signInWithPopup(auth, googleProvider);
-    } catch (error) {
-      console.error("Error al iniciar sesión:", error);
+      await signInWithRedirect(auth, googleProvider);
+    } catch (err) {
+      setErrorMsg("No se pudo conectar con Google: " + err.message);
     }
   };
 
-  const handleLogout = () => signOut(auth);
-
-  const estaBloqueado = user && usuariosBloqueados.includes(user.email);
-
-  const agregarAlCarrito = (producto) => {
-    setCarrito((prev) => {
-      const existe = prev.find((item) => item.id === producto.id);
-      if (existe) {
-        return prev.map((item) =>
-          item.id === producto.id ? { ...item, cantidad: item.cantidad + 1 } : item
-        );
-      }
-      return [...prev, { ...producto, cantidad: 1 }];
-    });
-  };
-
-  const eliminarDelCarrito = (id) => {
-    setCarrito((prev) => prev.filter((item) => item.id !== id));
-  };
-
-  const calcularTotal = () => {
-    return carrito.reduce((acc, item) => acc + item.precio * item.cantidad, 0).toFixed(2);
-  };
-
-  const realizarPedido = () => {
-    if (carrito.length === 0) return;
-
-    const nuevoPedido = {
-      id: Date.now(),
-      cliente: user.displayName || user.email,
-      email: user.email,
-      items: [...carrito],
-      total: calcularTotal(),
-      estado: 'Pendiente',
-      fecha: new Date().toLocaleString(),
-    };
-
-    setPedidos([nuevoPedido, ...pedidos]);
-    setSolicitudEnviada(nuevoPedido);
-    setCarrito([]);
-  };
-
-  const enviarWhatsApp = (pedido) => {
-    let mensaje = "*NUEVO PEDIDO - PUNTO M*\n";
-    mensaje += "*Cliente:* " + pedido.cliente + "\n";
-    mensaje += "*Correo:* " + pedido.email + "\n";
-    mensaje += "*Fecha:* " + pedido.fecha + "\n\n";
-    mensaje += "*LISTA DE PRODUCTOS:*\n";
-
-    pedido.items.forEach((item) => {
-      mensaje += "• " + item.nombre + " x" + item.cantidad + " - S/ " + (item.precio * item.cantidad).toFixed(2) + "\n";
-    });
-
-    mensaje += "\n*PRECIO TOTAL APROXIMADO: S/ " + pedido.total + "*\n\n";
-    mensaje += "*DATOS PARA PAGO:*\n";
-    mensaje += "• Yape / Plin: 999-999-999\n";
-    mensaje += "• Transferencia BCP: 123-4567890-0-99\n";
-    mensaje += "*Titular:* PUNTO M S.A.C.";
-
-    const url = "https://wa.me/?text=" + encodeURIComponent(mensaje);
-    window.open(url, '_blank');
-  };
-
-  const guardarProducto = (e) => {
+  // Iniciar sesión con Correo y Contraseña
+  const handleEmailAuth = async (e) => {
     e.preventDefault();
-    if (!nuevoNombre || !nuevoPrecio) return;
+    setErrorMsg('');
+    setInfoMsg('');
 
-    if (productoEditando) {
-      setCatalogo(catalogo.map(p => p.id === productoEditando.id ? {
-        ...p,
-        nombre: nuevoNombre,
-        precio: parseFloat(nuevoPrecio),
-        categoria: nuevaCategoria || 'General'
-      } : p));
-      setProductoEditando(null);
-    } else {
-      const nuevoProd = {
-        id: Date.now(),
-        nombre: nuevoNombre,
-        precio: parseFloat(nuevoPrecio),
-        categoria: nuevaCategoria || 'General'
-      };
-      setCatalogo([...catalogo, nuevoProd]);
+    if (!email || !password) {
+      setErrorMsg("Por favor completa todos los campos.");
+      return;
     }
 
-    setNuevoNombre('');
-    setNuevoPrecio('');
-    setNuevaCategoria('');
-  };
-
-  const iniciarEdicion = (prod) => {
-    setProductoEditando(prod);
-    setNuevoNombre(prod.nombre);
-    setNuevoPrecio(prod.precio);
-    setNuevaCategoria(prod.categoria);
-  };
-
-  const eliminarProductoCatalogo = (id) => {
-    setCatalogo(catalogo.filter(p => p.id !== id));
-  };
-
-  const marcarComoPagado = (id) => {
-    setPedidos(pedidos.map(p => p.id === id ? { ...p, estado: 'Pagado y Archivada' } : p));
-  };
-
-  const alternarBloqueoUsuario = (email) => {
-    if (usuariosBloqueados.includes(email)) {
-      setUsuariosBloqueados(usuariosBloqueados.filter(e => e !== email));
-    } else {
-      setUsuariosBloqueados([...usuariosBloqueados, email]);
+    try {
+      if (isRegistering) {
+        await createUserWithEmailAndPassword(auth, email, password);
+      } else {
+        await signInWithEmailAndPassword(auth, email, password);
+      }
+    } catch (err) {
+      switch (err.code) {
+        case 'auth/user-not-found':
+          setErrorMsg("No existe una cuenta registrada con este correo.");
+          break;
+        case 'auth/wrong-password':
+          setErrorMsg("Contraseña incorrecta.");
+          break;
+        case 'auth/email-already-in-use':
+          setErrorMsg("El correo ya está registrado. Intenta iniciar sesión.");
+          break;
+        case 'auth/weak-password':
+          setErrorMsg("La contraseña debe tener al menos 6 caracteres.");
+          break;
+        case 'auth/invalid-email':
+          setErrorMsg("Formato de correo electrónico no válido.");
+          break;
+        default:
+          setErrorMsg("Error: " + err.message);
+      }
     }
   };
 
+  // Restablecer contraseña
+  const handleResetPassword = async () => {
+    if (!email) {
+      setErrorMsg("Ingresa tu correo en el campo superior para enviarte el enlace de recuperación.");
+      return;
+    }
+    try {
+      await sendPasswordResetEmail(auth, email);
+      setInfoMsg("Se ha enviado un enlace de recuperación a tu correo.");
+      setErrorMsg('');
+    } catch (err) {
+      setErrorMsg("Error al enviar el correo: " + err.message);
+    }
+  };
+
+  // Cerrar sesión
+  const handleLogout = () => {
+    signOut(auth);
+  };
+
+  if (loading) {
+    return (
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', fontFamily: 'sans-serif' }}>
+        <p>Cargando PUNTO M...</p>
+      </div>
+    );
+  }
+
+  // SI EL USUARIO NO HA INICIADO SESIÓN (PANTALLA DE LOGIN/REGISTRO)
   if (!user) {
     return (
-      <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', backgroundColor: '#f3f4f6', fontFamily: 'sans-serif' }}>
-        <div style={{ backgroundColor: 'white', padding: '32px', borderRadius: '12px', boxShadow: '0 4px 6px rgba(0,0,0,0.1)', maxWidth: '400px', width: '100%', textAlign: 'center' }}>
-          <h1 style={{ fontSize: '28px', fontWeight: 'bold', color: '#1f2937', marginBottom: '8px' }}>PUNTO M</h1>
-          <p style={{ color: '#4b5563', marginBottom: '24px', fontSize: '14px' }}>Inicia sesión con tu cuenta de Google para acceder al catálogo.</p>
-          <button
-            onClick={handleGoogleLogin}
-            style={{ width: '100%', backgroundColor: '#2563eb', color: 'white', fontWeight: 'bold', padding: '12px', borderRadius: '8px', border: 'none', cursor: 'pointer' }}
+      <div style={{ maxWidth: '400px', margin: '40px auto', padding: '24px', fontFamily: 'sans-serif', border: '1px solid #e2e8f0', borderRadius: '12px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)', backgroundColor: '#fff' }}>
+        <h1 style={{ textAlign: 'center', color: '#0f172a', marginBottom: '8px' }}>PUNTO M</h1>
+        <p style={{ textAlign: 'center', color: '#64748b', fontSize: '14px', marginBottom: '20px' }}>
+          {isRegistering ? "Crea tu cuenta para acceder" : "Ingresa para explorar el catálogo"}
+        </p>
+
+        {/* Notificaciones de Error / Información */}
+        {errorMsg && <div style={{ backgroundColor: '#fef2f2', color: '#dc2626', padding: '10px', borderRadius: '6px', fontSize: '13px', marginBottom: '12px' }}>{errorMsg}</div>}
+        {infoMsg && <div style={{ backgroundColor: '#f0fdf4', color: '#16a34a', padding: '10px', borderRadius: '6px', fontSize: '13px', marginBottom: '12px' }}>{infoMsg}</div>}
+
+        {/* Botón de Google */}
+        <button 
+          onClick={handleGoogleLogin} 
+          style={{ width: '100%', padding: '12px', backgroundColor: '#2563eb', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', marginBottom: '16px' }}
+        >
+          Continuar con Google
+        </button>
+
+        <div style={{ display: 'flex', alignItems: 'center', margin: '16px 0' }}>
+          <div style={{ flex: 1, borderBottom: '1px solid #e2e8f0' }}></div>
+          <span style={{ padding: '0 8px', color: '#94a3b8', fontSize: '12px' }}>O CON TU CORREO</span>
+          <div style={{ flex: 1, borderBottom: '1px solid #e2e8f0' }}></div>
+        </div>
+
+        {/* Formulario de Correo / Clave */}
+        <form onSubmit={handleEmailAuth}>
+          <div style={{ marginBottom: '12px' }}>
+            <label style={{ display: 'block', fontSize: '12px', fontWeight: 'bold', color: '#334155', marginBottom: '4px' }}>Correo electrónico</label>
+            <input 
+              type="email" 
+              value={email} 
+              onChange={(e) => setEmail(e.target.value)} 
+              placeholder="tu@correo.com"
+              style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #cbd5e1', boxSizing: 'border-box' }}
+            />
+          </div>
+
+          <div style={{ marginBottom: '16px' }}>
+            <label style={{ display: 'block', fontSize: '12px', fontWeight: 'bold', color: '#334155', marginBottom: '4px' }}>Contraseña</label>
+            <input 
+              type="password" 
+              value={password} 
+              onChange={(e) => setPassword(e.target.value)} 
+              placeholder="••••••••"
+              style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #cbd5e1', boxSizing: 'border-box' }}
+            />
+          </div>
+
+          <button 
+            type="submit" 
+            style={{ width: '100%', padding: '12px', backgroundColor: '#0f172a', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', marginBottom: '12px' }}
           >
-            Iniciar sesión con Google
+            {isRegistering ? "Registrarse" : "Iniciar Sesión"}
           </button>
-        </div>
-      </div>
-    );
-  }
+        </form>
 
-  if (estaBloqueado) {
-    return (
-      <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', backgroundColor: '#fef2f2', fontFamily: 'sans-serif' }}>
-        <div style={{ backgroundColor: 'white', padding: '32px', borderRadius: '12px', boxShadow: '0 4px 6px rgba(0,0,0,0.1)', maxWidth: '400px', width: '100%', textAlign: 'center', border: '1px solid #fecaca' }}>
-          <h2 style={{ fontSize: '24px', fontWeight: 'bold', color: '#b91c1c', marginBottom: '8px' }}>Acceso Restringido</h2>
-          <p style={{ color: '#4b5563', marginBottom: '24px', fontSize: '14px' }}>Tu usuario ha sido bloqueado por la administración de PUNTO M.</p>
-          <button onClick={handleLogout} style={{ backgroundColor: '#1f2937', color: 'white', padding: '10px 16px', borderRadius: '8px', border: 'none', cursor: 'pointer' }}>Cerrar sesión</button>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div style={{ minHeight: '100vh', backgroundColor: '#f9fafb', fontFamily: 'sans-serif', display: 'flex', flexDirection: 'column' }}>
-      <header style={{ backgroundColor: 'white', borderBottom: '1px solid #e5e7eb', padding: '16px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div>
-          <h1 style={{ fontSize: '20px', fontWeight: '900', color: '#2563eb', margin: 0 }}>PUNTO M</h1>
-          <p style={{ fontSize: '12px', color: '#6b7280', margin: 0 }}>Usuario: {user.displayName || user.email}</p>
-        </div>
-        <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-          {isAdmin && (
-            <button
-              onClick={() => setVistaAdmin(!vistaAdmin)}
-              style={{ backgroundColor: '#7c3aed', color: 'white', fontSize: '14px', padding: '8px 16px', borderRadius: '8px', border: 'none', cursor: 'pointer', fontWeight: '500' }}
+        {/* Enlaces de alternancia y recuperación */}
+        <div style={{ textAlign: 'center', fontSize: '13px' }}>
+          {!isRegistering && (
+            <button 
+              type="button"
+              onClick={handleResetPassword} 
+              style={{ background: 'none', border: 'none', color: '#64748b', textDecoration: 'underline', cursor: 'pointer', display: 'block', margin: '0 auto 12px' }}
             >
-              {vistaAdmin ? 'Ir a Tienda' : 'Panel Admin'}
+              ¿Olvidaste tu contraseña?
             </button>
           )}
-          <button onClick={handleLogout} style={{ background: 'none', border: 'none', color: '#4b5563', cursor: 'pointer', fontWeight: 'bold' }} title="Cerrar sesión">
-            Salir
+
+          <button 
+            type="button"
+            onClick={() => { setIsRegistering(!isRegistering); setErrorMsg(''); setInfoMsg(''); }} 
+            style={{ background: 'none', border: 'none', color: '#2563eb', fontWeight: 'bold', cursor: 'pointer' }}
+          >
+            {isRegistering ? "¿Ya tienes cuenta? Inicia sesión" : "¿No tienes cuenta? Regístrate aquí"}
           </button>
         </div>
+      </div>
+    );
+  }
+
+  // SI EL USUARIO YA INICIÓ SESIÓN (CATÁLOGO Y PANEL)
+  const isAdmin = user.email === ADMIN_EMAIL;
+
+  return (
+    <div style={{ maxWidth: '800px', margin: '0 auto', padding: '20px', fontFamily: 'sans-serif' }}>
+      <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #e2e8f0', paddingBottom: '12px', marginBottom: '20px' }}>
+        <div>
+          <h1 style={{ margin: 0, fontSize: '24px' }}>PUNTO M</h1>
+          <span style={{ fontSize: '12px', color: '#64748b' }}>Bienvenido, {user.email}</span>
+        </div>
+        <button onClick={handleLogout} style={{ padding: '8px 16px', backgroundColor: '#ef4444', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer' }}>
+          Cerrar Sesión
+        </button>
       </header>
 
-      <main style={{ flex: 1, maxWidth: '1100px', width: '100%', margin: '0 auto', padding: '24px' }}>
-        {vistaAdmin ? (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-            <h2 style={{ fontSize: '22px', fontWeight: 'bold', color: '#1f2937' }}>Panel de Administración General</h2>
+      {isAdmin && (
+        <div style={{ backgroundColor: '#f8fafc', padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', marginBottom: '20px' }}>
+          <strong style={{ color: '#0f172a' }}>Panel de Administración Exclusivo</strong>
+          <p style={{ margin: '4px 0 0', fontSize: '13px', color: '#475569' }}>Acceso concedido a {ADMIN_EMAIL}. Puedes gestionar productos y controlar pedidos en Soles (S/).</p>
+        </div>
+      )}
 
-            <div style={{ backgroundColor: 'white', padding: '20px', borderRadius: '12px', border: '1px solid #e5e7eb' }}>
-              <h3 style={{ fontSize: '18px', fontWeight: 'bold', marginBottom: '12px', color: '#374151' }}>Modificar Catálogo</h3>
-              <form onSubmit={guardarProducto} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px', backgroundColor: '#f9fafb', padding: '16px', borderRadius: '8px' }}>
-                <input
-                  type="text"
-                  placeholder="Nombre del producto"
-                  value={nuevoNombre}
-                  onChange={(e) => setNuevoNombre(e.target.value)}
-                  style={{ border: '1px solid #d1d5db', padding: '8px', borderRadius: '6px', fontSize: '14px' }}
-                  required
-                />
-                <input
-                  type="number"
-                  step="0.01"
-                  placeholder="Precio en Soles (S/)"
-                  value={nuevoPrecio}
-                  onChange={(e) => setNuevoPrecio(e.target.value)}
-                  style={{ border: '1px solid #d1d5db', padding: '8px', borderRadius: '6px', fontSize: '14px' }}
-                  required
-                />
-                <input
-                  type="text"
-                  placeholder="Categoría"
-                  value={nuevaCategoria}
-                  onChange={(e) => setNuevaCategoria(e.target.value)}
-                  style={{ border: '1px solid #d1d5db', padding: '8px', borderRadius: '6px', fontSize: '14px' }}
-                />
-                <button type="submit" style={{ backgroundColor: '#7c3aed', color: 'white', fontSize: '14px', fontWeight: 'bold', padding: '8px 16px', borderRadius: '6px', border: 'none', cursor: 'pointer' }}>
-                  {productoEditando ? 'Guardar Cambios' : 'Crear Producto'}
-                </button>
-              </form>
-
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: '12px', marginTop: '16px' }}>
-                {catalogo.map((prod) => (
-                  <div key={prod.id} style={{ border: '1px solid #e5e7eb', padding: '12px', borderRadius: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: 'white' }}>
-                    <div>
-                      <span style={{ fontSize: '11px', color: '#7c3aed', backgroundColor: '#f3e8ff', padding: '2px 6px', borderRadius: '4px' }}>{prod.categoria}</span>
-                      <h4 style={{ fontWeight: 'bold', fontSize: '14px', margin: '4px 0' }}>{prod.nombre}</h4>
-                      <p style={{ fontSize: '12px', color: '#4b5563', margin: 0, fontWeight: 'bold' }}>S/ {prod.precio.toFixed(2)}</p>
-                    </div>
-                    <div style={{ display: 'flex', gap: '6px' }}>
-                      <button onClick={() => iniciarEdicion(prod)} style={{ background: 'none', border: 'none', color: '#2563eb', cursor: 'pointer', fontSize: '12px' }}>Editar</button>
-                      <button onClick={() => eliminarProductoCatalogo(prod.id)} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: '12px' }}>Eliminar</button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div style={{ backgroundColor: 'white', padding: '20px', borderRadius: '12px', border: '1px solid #e5e7eb' }}>
-              <h3 style={{ fontSize: '18px', fontWeight: 'bold', marginBottom: '12px', color: '#374151' }}>Historial de Pedidos y Bloqueo de Usuarios</h3>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                {pedidos.length === 0 ? (
-                  <p style={{ color: '#9ca3af', fontSize: '14px' }}>No hay pedidos registrados todavía.</p>
-                ) : (
-                  pedidos.map((p) => (
-                    <div key={p.id} style={{ border: '1px solid #e5e7eb', padding: '16px', borderRadius: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#f9fafb', flexWrap: 'wrap', gap: '12px' }}>
-                      <div>
-                        <p style={{ fontWeight: 'bold', margin: '0 0 4px 0', fontSize: '14px' }}>{p.cliente} <span style={{ fontWeight: 'normal', fontSize: '12px', color: '#6b7280' }}>({p.email})</span></p>
-                        <p style={{ fontSize: '12px', color: '#6b7280', margin: '0 0 4px 0' }}>Fecha: {p.fecha}</p>
-                        <p style={{ fontSize: '14px', fontWeight: 'bold', color: '#2563eb', margin: '0 0 8px 0' }}>Precio Total Aproximado: S/ {p.total}</p>
-                        <span style={{ fontSize: '11px', padding: '2px 8px', borderRadius: '4px', fontWeight: '500', backgroundColor: p.estado === 'Pagado y Archivada' ? '#dcfce7' : '#fef9c3', color: p.estado === 'Pagado y Archivada' ? '#166534' : '#854d0e' }}>
-                          {p.estado}
-                        </span>
-                      </div>
-                      <div style={{ display: 'flex', gap: '8px' }}>
-                        {p.estado !== 'Pagado y Archivada' && (
-                          <button onClick={() => marcarComoPagado(p.id)} style={{ backgroundColor: '#16a34a', color: 'white', border: 'none', padding: '6px 12px', borderRadius: '6px', fontSize: '12px', cursor: 'pointer', fontWeight: 'bold' }}>
-                            Marcar Pagado y Archivar
-                          </button>
-                        )}
-                        <button onClick={() => alternarBloqueoUsuario(p.email)} style={{ backgroundColor: '#fee2e2', color: '#b91c1c', border: 'none', padding: '6px 12px', borderRadius: '6px', fontSize: '12px', cursor: 'pointer', fontWeight: 'bold' }}>
-                          {usuariosBloqueados.includes(p.email) ? 'Desbloquear' : 'Bloquear'}
-                        </button>
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
-          </div>
-        ) : (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '24px' }}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              <h2 style={{ fontSize: '20px', fontWeight: 'bold', color: '#1f2937', margin: 0 }}>Catálogo de Productos</h2>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '16px' }}>
-                {catalogo.map((prod) => (
-                  <div key={prod.id} style={{ backgroundColor: 'white', padding: '16px', borderRadius: '12px', border: '1px solid #e5e7eb', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}>
-                    <div>
-                      <span style={{ fontSize: '11px', color: '#2563eb', backgroundColor: '#eff6ff', padding: '2px 6px', borderRadius: '4px' }}>{prod.categoria}</span>
-                      <h3 style={{ fontSize: '16px', fontWeight: 'bold', margin: '8px 0 4px 0', color: '#1f2937' }}>{prod.nombre}</h3>
-                      <p style={{ color: '#4b5563', fontWeight: 'bold', fontSize: '14px', margin: 0 }}>S/ {prod.precio.toFixed(2)}</p>
-                    </div>
-                    <button
-                      onClick={() => agregarAlCarrito(prod)}
-                      style={{ marginTop: '16px', width: '100%', backgroundColor: '#2563eb', color: 'white', fontSize: '14px', fontWeight: 'medium', padding: '8px', borderRadius: '8px', border: 'none', cursor: 'pointer' }}
-                    >
-                      Agregar al carrito
-                    </button>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div style={{ backgroundColor: 'white', padding: '20px', borderRadius: '12px', border: '1px solid #e5e7eb', height: 'fit-content', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              <h2 style={{ fontSize: '18px', fontWeight: 'bold', color: '#1f2937', borderBottom: '1px solid #e5e7eb', paddingBottom: '12px', margin: 0 }}>Tu Pedido</h2>
-
-              {carrito.length === 0 ? (
-                <p style={{ color: '#9ca3af', fontSize: '14px', margin: 0 }}>Tu carrito está vacío.</p>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                  {carrito.map((item) => (
-                    <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '14px' }}>
-                      <div>
-                        <p style={{ fontWeight: '500', margin: '0 0 2px 0', color: '#1f2937' }}>{item.nombre} x{item.cantidad}</p>
-                        <p style={{ fontSize: '12px', color: '#6b7280', margin: 0 }}>S/ {(item.precio * item.cantidad).toFixed(2)}</p>
-                      </div>
-                      <button onClick={() => eliminarDelCarrito(item.id)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: '12px' }}>Eliminar</button>
-                    </div>
-                  ))}
-
-                  <div style={{ borderTop: '1px solid #e5e7eb', paddingTop: '12px', marginTop: '4px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', fontSize: '16px', color: '#1f2937' }}>
-                      <span>Precio Total Aproximado:</span>
-                      <span style={{ color: '#2563eb' }}>S/ {calcularTotal()}</span>
-                    </div>
-                  </div>
-
-                  <button
-                    onClick={realizarPedido}
-                    style={{ width: '100%', backgroundColor: '#16a34a', color: 'white', fontWeight: 'bold', padding: '12px', borderRadius: '8px', border: 'none', cursor: 'pointer' }}
-                  >
-                    Generar Pedido
-                  </button>
-                </div>
-              )}
-
-              {solicitudEnviada && (
-                <div style={{ marginTop: '16px', padding: '16px', backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '8px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                  <p style={{ fontSize: '14px', fontWeight: 'bold', color: '#166534', margin: 0 }}>¡Pedido Registrado con Éxito!</p>
-                  <p style={{ fontSize: '12px', color: '#4b5563', margin: 0 }}>Envía el formato a WhatsApp para procesar el pago:</p>
-                  
-                  <button
-                    onClick={() => enviarWhatsApp(solicitudEnviada)}
-                    style={{ width: '100%', backgroundColor: '#059669', color: 'white', fontSize: '12px', fontWeight: 'bold', padding: '10px', borderRadius: '6px', border: 'none', cursor: 'pointer' }}
-                  >
-                    Enviar Lista por WhatsApp
-                  </button>
-
-                  <div style={{ borderTop: '1px solid #bbf7d0', paddingTop: '8px', fontSize: '12px', color: '#4b5563', display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                    <p style={{ fontWeight: 'bold', margin: '0 0 2px 0' }}>Datos para pagar:</p>
-                    <p style={{ margin: 0 }}>• Yape / Plin: 999-999-999</p>
-                    <p style={{ margin: 0 }}>• Transferencia BCP: 123-4567890-0-99</p>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-      </main>
-    </div>
-  );
-}
+      <main>
+        <h2>Catálogo de Productos</h2>
+        <p style={{ color: '#64748b' }}>Precios mostrados en Soles (S/).</p>
+        
+        {/* Aquí renderizarías tu lista de productos y carrito */}
+        <div style={{ border: '1px
