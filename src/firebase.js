@@ -1,18 +1,16 @@
 import { initializeApp } from "firebase/app";
-import { getAuth, GoogleAuthProvider, signInWithPopup, signOut } from "firebase/auth";
-import { getFirestore } from "firebase/firestore";
+import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from "firebase/auth";
 
 const firebaseConfig = {
-  apiKey: "AIzaSyDCbeJRLxvboWnPxyKPCFcnjnoHuINpHUi",
-  authDomain: "puntom-app.firebaseapp.com",
+  apiKey: "TU_API_KEY_DE_FIREBASE",
+  authDomain: "TU_DOMINIO.firebaseapp.com",
   projectId: "puntom-app",
   storageBucket: "puntom-app.appspot.com",
-  messagingSenderId: "690148844286",
-  appId: "1:690148844286:web:cb9d271de6e11e710f5e4"
+  messagingSenderId: "TU_SENDER_ID",
+  appId: "TU_APP_ID"
 };
 
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
-export const db = getFirestore(app);
-export { signInWithPopup, signOut };
+export { signInWithPopup, signOut, onAuthStateChanged };
