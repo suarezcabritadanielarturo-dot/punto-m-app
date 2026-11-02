@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { auth, googleProvider, signInWithPopup, signOut, onAuthStateChanged } from './firebase';
-import { ShoppingCart, Trash2, CheckCircle, ShieldAlert, LogOut, PlusCircle, Package, Edit, Save, Send } from 'lucide-react';
 
-const ADMIN_EMAIL = 'suarez.cabrita.daniel.arturo@gmail.com'; 
+const ADMIN_EMAIL = 'suarez.cabrita.daniel.arturo@gmail.com';
 
 const CATALOGO_INICIAL = [
   { id: 1, nombre: 'Producto A', precio: 25.00, categoria: 'Categoría 1' },
@@ -162,13 +161,13 @@ export default function App() {
 
   if (!user) {
     return (
-      <div className="min-h-screen bg-gray-100 flex flex-col items-center justify-center p-4">
-        <div className="bg-white p-8 rounded-xl shadow-md max-w-md w-full text-center">
-          <h1 className="text-3xl font-bold text-gray-800 mb-2">PUNTO M</h1>
-          <p className="text-gray-600 mb-6">Debes iniciar sesión con tu cuenta de Google para acceder al catálogo.</p>
+      <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', backgroundColor: '#f3f4f6', fontFamily: 'sans-serif' }}>
+        <div style={{ backgroundColor: 'white', padding: '32px', borderRadius: '12px', boxShadow: '0 4px 6px rgba(0,0,0,0.1)', maxWidth: '400px', width: '100%', textAlign: 'center' }}>
+          <h1 style={{ fontSize: '28px', fontWeight: 'bold', color: '#1f2937', marginBottom: '8px' }}>PUNTO M</h1>
+          <p style={{ color: '#4b5563', marginBottom: '24px', fontSize: '14px' }}>Inicia sesión con tu cuenta de Google para acceder al catálogo.</p>
           <button
             onClick={handleGoogleLogin}
-            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-4 rounded-lg flex items-center justify-center gap-2 transition"
+            style={{ width: '100%', backgroundColor: '#2563eb', color: 'white', fontWeight: 'bold', padding: '12px', borderRadius: '8px', border: 'none', cursor: 'pointer' }}
           >
             Iniciar sesión con Google
           </button>
@@ -179,59 +178,52 @@ export default function App() {
 
   if (estaBloqueado) {
     return (
-      <div className="min-h-screen bg-red-50 flex flex-col items-center justify-center p-4">
-        <div className="bg-white p-8 rounded-xl shadow-md max-w-md w-full text-center border border-red-200">
-          <ShieldAlert className="w-16 h-16 text-red-500 mx-auto mb-4" />
-          <h2 className="text-2xl font-bold text-red-700 mb-2">Acceso Restringido</h2>
-          <p className="text-gray-600 mb-6">Tu usuario ha sido bloqueado por la administración de PUNTO M.</p>
-          <button onClick={handleLogout} className="bg-gray-800 text-white px-4 py-2 rounded-lg">Cerrar sesión</button>
+      <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', backgroundColor: '#fef2f2', fontFamily: 'sans-serif' }}>
+        <div style={{ backgroundColor: 'white', padding: '32px', borderRadius: '12px', boxShadow: '0 4px 6px rgba(0,0,0,0.1)', maxWidth: '400px', width: '100%', textAlign: 'center', border: '1px solid #fecaca' }}>
+          <h2 style={{ fontSize: '24px', fontWeight: 'bold', color: '#b91c1c', marginBottom: '8px' }}>Acceso Restringido</h2>
+          <p style={{ color: '#4b5563', marginBottom: '24px', fontSize: '14px' }}>Tu usuario ha sido bloqueado por la administración de PUNTO M.</p>
+          <button onClick={handleLogout} style={{ backgroundColor: '#1f2937', color: 'white', padding: '10px 16px', borderRadius: '8px', border: 'none', cursor: 'pointer' }}>Cerrar sesión</button>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col">
-      <header className="bg-white border-b px-6 py-4 flex justify-between items-center sticky top-0 z-10 shadow-sm">
+    <div style={{ minHeight: '100vh', backgroundColor: '#f9fafb', fontFamily: 'sans-serif', display: 'flex', flexDirection: 'column' }}>
+      <header style={{ backgroundColor: 'white', borderBottom: '1px solid #e5e7eb', padding: '16px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
-          <h1 className="text-2xl font-black tracking-wider text-blue-600">PUNTO M</h1>
-          <p className="text-xs text-gray-500">Usuario: {user.displayName || user.email}</p>
+          <h1 style={{ fontSize: '20px', fontWeight: '900', color: '#2563eb', margin: 0 }}>PUNTO M</h1>
+          <p style={{ fontSize: '12px', color: '#6b7280', margin: 0 }}>Usuario: {user.displayName || user.email}</p>
         </div>
-        <div className="flex items-center gap-3">
+        <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
           {isAdmin && (
             <button
               onClick={() => setVistaAdmin(!vistaAdmin)}
-              className="bg-purple-600 text-white text-sm px-4 py-2 rounded-lg font-medium hover:bg-purple-700 transition"
+              style={{ backgroundColor: '#7c3aed', color: 'white', fontSize: '14px', padding: '8px 16px', borderRadius: '8px', border: 'none', cursor: 'pointer', fontWeight: '500' }}
             >
               {vistaAdmin ? 'Ir a Tienda' : 'Panel Admin'}
             </button>
           )}
-          <button onClick={handleLogout} className="p-2 text-gray-600 hover:text-red-600" title="Cerrar sesión">
-            <LogOut className="w-5 h-5" />
+          <button onClick={handleLogout} style={{ background: 'none', border: 'none', color: '#4b5563', cursor: 'pointer', fontWeight: 'bold' }} title="Cerrar sesión">
+            Salir
           </button>
         </div>
       </header>
 
-      <main className="flex-1 max-w-6xl w-full mx-auto p-4 md:p-6">
+      <main style={{ flex: 1, maxWidth: '1100px', width: '100%', margin: '0 auto', padding: '24px' }}>
         {vistaAdmin ? (
-          <div className="space-y-8">
-            <div className="flex justify-between items-center">
-              <h2 className="text-2xl font-bold text-gray-800">Panel de Administración General</h2>
-            </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+            <h2 style={{ fontSize: '22px', fontWeight: 'bold', color: '#1f2937' }}>Panel de Administración General</h2>
 
-            <div className="bg-white p-6 rounded-xl shadow-sm border space-y-4">
-              <div className="flex items-center gap-2 border-b pb-3">
-                <Package className="w-5 h-5 text-purple-600" />
-                <h3 className="text-lg font-bold text-gray-800">Modificar Catálogo</h3>
-              </div>
-
-              <form onSubmit={guardarProducto} className="grid grid-cols-1 sm:grid-cols-4 gap-3 bg-gray-50 p-4 rounded-lg">
+            <div style={{ backgroundColor: 'white', padding: '20px', borderRadius: '12px', border: '1px solid #e5e7eb' }}>
+              <h3 style={{ fontSize: '18px', fontWeight: 'bold', marginBottom: '12px', color: '#374151' }}>Modificar Catálogo</h3>
+              <form onSubmit={guardarProducto} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px', backgroundColor: '#f9fafb', padding: '16px', borderRadius: '8px' }}>
                 <input
                   type="text"
                   placeholder="Nombre del producto"
                   value={nuevoNombre}
                   onChange={(e) => setNuevoNombre(e.target.value)}
-                  className="border p-2 rounded text-sm bg-white"
+                  style={{ border: '1px solid #d1d5db', padding: '8px', borderRadius: '6px', fontSize: '14px' }}
                   required
                 />
                 <input
@@ -240,7 +232,7 @@ export default function App() {
                   placeholder="Precio en Soles (S/)"
                   value={nuevoPrecio}
                   onChange={(e) => setNuevoPrecio(e.target.value)}
-                  className="border p-2 rounded text-sm bg-white"
+                  style={{ border: '1px solid #d1d5db', padding: '8px', borderRadius: '6px', fontSize: '14px' }}
                   required
                 />
                 <input
@@ -248,59 +240,54 @@ export default function App() {
                   placeholder="Categoría"
                   value={nuevaCategoria}
                   onChange={(e) => setNuevaCategoria(e.target.value)}
-                  className="border p-2 rounded text-sm bg-white"
+                  style={{ border: '1px solid #d1d5db', padding: '8px', borderRadius: '6px', fontSize: '14px' }}
                 />
-                <button type="submit" className="bg-purple-600 hover:bg-purple-700 text-white text-sm font-semibold py-2 px-4 rounded flex items-center justify-center gap-2">
-                  {productoEditando ? <Save className="w-4 h-4"/> : <PlusCircle className="w-4 h-4"/>}
+                <button type="submit" style={{ backgroundColor: '#7c3aed', color: 'white', fontSize: '14px', fontWeight: 'bold', padding: '8px 16px', borderRadius: '6px', border: 'none', cursor: 'pointer' }}>
                   {productoEditando ? 'Guardar Cambios' : 'Crear Producto'}
                 </button>
               </form>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 pt-2">
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: '12px', marginTop: '16px' }}>
                 {catalogo.map((prod) => (
-                  <div key={prod.id} className="border p-3 rounded-lg flex justify-between items-center bg-white shadow-xs">
+                  <div key={prod.id} style={{ border: '1px solid #e5e7eb', padding: '12px', borderRadius: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: 'white' }}>
                     <div>
-                      <span className="text-xs text-purple-600 bg-purple-50 px-2 py-0.5 rounded">{prod.categoria}</span>
-                      <h4 className="font-bold text-sm mt-1">{prod.nombre}</h4>
-                      <p className="text-xs text-gray-600 font-semibold">S/ {prod.precio.toFixed(2)}</p>
+                      <span style={{ fontSize: '11px', color: '#7c3aed', backgroundColor: '#f3e8ff', padding: '2px 6px', borderRadius: '4px' }}>{prod.categoria}</span>
+                      <h4 style={{ fontWeight: 'bold', fontSize: '14px', margin: '4px 0' }}>{prod.nombre}</h4>
+                      <p style={{ fontSize: '12px', color: '#4b5563', margin: 0, fontWeight: 'bold' }}>S/ {prod.precio.toFixed(2)}</p>
                     </div>
-                    <div className="flex items-center gap-1">
-                      <button onClick={() => iniciarEdicion(prod)} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded" title="Editar">
-                        <Edit className="w-4 h-4" />
-                      </button>
-                      <button onClick={() => eliminarProductoCatalogo(prod.id)} className="p-1.5 text-red-600 hover:bg-red-50 rounded" title="Eliminar">
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                    <div style={{ display: 'flex', gap: '6px' }}>
+                      <button onClick={() => iniciarEdicion(prod)} style={{ background: 'none', border: 'none', color: '#2563eb', cursor: 'pointer', fontSize: '12px' }}>Editar</button>
+                      <button onClick={() => eliminarProductoCatalogo(prod.id)} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: '12px' }}>Eliminar</button>
                     </div>
                   </div>
                 ))}
               </div>
             </div>
 
-            <div className="bg-white p-6 rounded-xl shadow-sm border space-y-4">
-              <h3 className="text-lg font-bold text-gray-800 border-b pb-3">Historial de Pedidos y Bloqueo de Usuarios</h3>
-              <div className="space-y-4">
+            <div style={{ backgroundColor: 'white', padding: '20px', borderRadius: '12px', border: '1px solid #e5e7eb' }}>
+              <h3 style={{ fontSize: '18px', fontWeight: 'bold', marginBottom: '12px', color: '#374151' }}>Historial de Pedidos y Bloqueo de Usuarios</h3>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                 {pedidos.length === 0 ? (
-                  <p className="text-gray-500 text-sm">No hay pedidos registrados todavía.</p>
+                  <p style={{ color: '#9ca3af', fontSize: '14px' }}>No hay pedidos registrados todavía.</p>
                 ) : (
                   pedidos.map((p) => (
-                    <div key={p.id} className="border p-4 rounded-lg flex flex-col md:flex-row justify-between md:items-center gap-4 bg-gray-50">
+                    <div key={p.id} style={{ border: '1px solid #e5e7eb', padding: '16px', borderRadius: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#f9fafb', flexWrap: 'wrap', gap: '12px' }}>
                       <div>
-                        <p className="font-bold text-gray-800">{p.cliente} <span className="text-xs font-normal text-gray-500">({p.email})</span></p>
-                        <p className="text-xs text-gray-600">Fecha: {p.fecha}</p>
-                        <p className="text-sm font-semibold text-blue-600 mt-1">Precio Total Aproximado: S/ {p.total}</p>
-                        <span className={`inline-block mt-2 text-xs px-2 py-1 rounded font-medium ${p.estado === 'Pagado y Archivada' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}`}>
+                        <p style={{ fontWeight: 'bold', margin: '0 0 4px 0', fontSize: '14px' }}>{p.cliente} <span style={{ fontWeight: 'normal', fontSize: '12px', color: '#6b7280' }}>({p.email})</span></p>
+                        <p style={{ fontSize: '12px', color: '#6b7280', margin: '0 0 4px 0' }}>Fecha: {p.fecha}</p>
+                        <p style={{ fontSize: '14px', fontWeight: 'bold', color: '#2563eb', margin: '0 0 8px 0' }}>Precio Total Aproximado: S/ {p.total}</p>
+                        <span style={{ fontSize: '11px', padding: '2px 8px', borderRadius: '4px', fontWeight: '500', backgroundColor: p.estado === 'Pagado y Archivada' ? '#dcfce7' : '#fef9c3', color: p.estado === 'Pagado y Archivada' ? '#166534' : '#854d0e' }}>
                           {p.estado}
                         </span>
                       </div>
-                      <div className="flex gap-2">
+                      <div style={{ display: 'flex', gap: '8px' }}>
                         {p.estado !== 'Pagado y Archivada' && (
-                          <button onClick={() => marcarComoPagado(p.id)} className="bg-green-600 text-white text-xs px-3 py-2 rounded font-semibold hover:bg-green-700">
+                          <button onClick={() => marcarComoPagado(p.id)} style={{ backgroundColor: '#16a34a', color: 'white', border: 'none', padding: '6px 12px', borderRadius: '6px', fontSize: '12px', cursor: 'pointer', fontWeight: 'bold' }}>
                             Marcar Pagado y Archivar
                           </button>
                         )}
-                        <button onClick={() => alternarBloqueoUsuario(p.email)} className="bg-red-100 text-red-600 text-xs px-3 py-2 rounded font-semibold hover:bg-red-200">
-                          {usuariosBloqueados.includes(p.email) ? 'Desbloquear Usuario' : 'Bloquear Usuario'}
+                        <button onClick={() => alternarBloqueoUsuario(p.email)} style={{ backgroundColor: '#fee2e2', color: '#b91c1c', border: 'none', padding: '6px 12px', borderRadius: '6px', fontSize: '12px', cursor: 'pointer', fontWeight: 'bold' }}>
+                          {usuariosBloqueados.includes(p.email) ? 'Desbloquear' : 'Bloquear'}
                         </button>
                       </div>
                     </div>
@@ -310,20 +297,20 @@ export default function App() {
             </div>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div className="md:col-span-2 space-y-4">
-              <h2 className="text-xl font-bold text-gray-800">Catálogo de Productos</h2>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '24px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <h2 style={{ fontSize: '20px', fontWeight: 'bold', color: '#1f2937', margin: 0 }}>Catálogo de Productos</h2>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '16px' }}>
                 {catalogo.map((prod) => (
-                  <div key={prod.id} className="bg-white p-4 rounded-xl shadow-sm border flex flex-col justify-between">
+                  <div key={prod.id} style={{ backgroundColor: 'white', padding: '16px', borderRadius: '12px', border: '1px solid #e5e7eb', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}>
                     <div>
-                      <span className="text-xs text-blue-600 bg-blue-50 px-2 py-1 rounded">{prod.categoria}</span>
-                      <h3 className="font-bold text-lg mt-2 text-gray-800">{prod.nombre}</h3>
-                      <p className="text-gray-600 font-semibold mt-1">S/ {prod.precio.toFixed(2)}</p>
+                      <span style={{ fontSize: '11px', color: '#2563eb', backgroundColor: '#eff6ff', padding: '2px 6px', borderRadius: '4px' }}>{prod.categoria}</span>
+                      <h3 style={{ fontSize: '16px', fontWeight: 'bold', margin: '8px 0 4px 0', color: '#1f2937' }}>{prod.nombre}</h3>
+                      <p style={{ color: '#4b5563', fontWeight: 'bold', fontSize: '14px', margin: 0 }}>S/ {prod.precio.toFixed(2)}</p>
                     </div>
                     <button
                       onClick={() => agregarAlCarrito(prod)}
-                      className="mt-4 w-full bg-blue-600 text-white text-sm font-medium py-2 rounded-lg hover:bg-blue-700 transition"
+                      style={{ marginTop: '16px', width: '100%', backgroundColor: '#2563eb', color: 'white', fontSize: '14px', fontWeight: 'medium', padding: '8px', borderRadius: '8px', border: 'none', cursor: 'pointer' }}
                     >
                       Agregar al carrito
                     </button>
@@ -332,38 +319,33 @@ export default function App() {
               </div>
             </div>
 
-            <div className="bg-white p-6 rounded-xl shadow-sm border h-fit space-y-6">
-              <div className="flex items-center gap-2 border-b pb-3">
-                <ShoppingCart className="w-5 h-5 text-blue-600" />
-                <h2 className="text-lg font-bold text-gray-800">Tu Pedido</h2>
-              </div>
+            <div style={{ backgroundColor: 'white', padding: '20px', borderRadius: '12px', border: '1px solid #e5e7eb', height: 'fit-content', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <h2 style={{ fontSize: '18px', fontWeight: 'bold', color: '#1f2937', borderBottom: '1px solid #e5e7eb', paddingBottom: '12px', margin: 0 }}>Tu Pedido</h2>
 
               {carrito.length === 0 ? (
-                <p className="text-gray-400 text-sm">Tu carrito está vacío.</p>
+                <p style={{ color: '#9ca3af', fontSize: '14px', margin: 0 }}>Tu carrito está vacío.</p>
               ) : (
-                <div className="space-y-3">
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                   {carrito.map((item) => (
-                    <div key={item.id} className="flex justify-between items-center text-sm">
+                    <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '14px' }}>
                       <div>
-                        <p className="font-medium text-gray-800">{item.nombre} x{item.cantidad}</p>
-                        <p className="text-xs text-gray-500">S/ {(item.precio * item.cantidad).toFixed(2)}</p>
+                        <p style={{ fontWeight: '500', margin: '0 0 2px 0', color: '#1f2937' }}>{item.nombre} x{item.cantidad}</p>
+                        <p style={{ fontSize: '12px', color: '#6b7280', margin: 0 }}>S/ {(item.precio * item.cantidad).toFixed(2)}</p>
                       </div>
-                      <button onClick={() => eliminarDelCarrito(item.id)} className="text-red-500 hover:text-red-700">
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                      <button onClick={() => eliminarDelCarrito(item.id)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: '12px' }}>Eliminar</button>
                     </div>
                   ))}
 
-                  <div className="border-t pt-3 mt-3">
-                    <div className="flex justify-between font-bold text-gray-800">
+                  <div style={{ borderTop: '1px solid #e5e7eb', paddingTop: '12px', marginTop: '4px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', fontSize: '16px', color: '#1f2937' }}>
                       <span>Precio Total Aproximado:</span>
-                      <span className="text-blue-600">S/ {calcularTotal()}</span>
+                      <span style={{ color: '#2563eb' }}>S/ {calcularTotal()}</span>
                     </div>
                   </div>
 
                   <button
                     onClick={realizarPedido}
-                    className="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-lg flex items-center justify-center gap-2 transition"
+                    style={{ width: '100%', backgroundColor: '#16a34a', color: 'white', fontWeight: 'bold', padding: '12px', borderRadius: '8px', border: 'none', cursor: 'pointer' }}
                   >
                     Generar Pedido
                   </button>
@@ -371,23 +353,21 @@ export default function App() {
               )}
 
               {solicitudEnviada && (
-                <div className="mt-6 p-4 bg-green-50 border border-green-200 rounded-lg space-y-3">
-                  <div className="flex items-center gap-2 text-green-800 font-bold text-sm">
-                    <CheckCircle className="w-4 h-4" /> ¡Pedido Registrado!
-                  </div>
-                  <p className="text-xs text-gray-600">Envía la lista formateada por WhatsApp para coordinar el pago:</p>
+                <div style={{ marginTop: '16px', padding: '16px', backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '8px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  <p style={{ fontSize: '14px', fontWeight: 'bold', color: '#166534', margin: 0 }}>¡Pedido Registrado con Éxito!</p>
+                  <p style={{ fontSize: '12px', color: '#4b5563', margin: 0 }}>Envía el formato a WhatsApp para procesar el pago:</p>
                   
                   <button
                     onClick={() => enviarWhatsApp(solicitudEnviada)}
-                    className="w-full bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold py-2 rounded-lg flex items-center justify-center gap-2"
+                    style={{ width: '100%', backgroundColor: '#059669', color: 'white', fontSize: '12px', fontWeight: 'bold', padding: '10px', borderRadius: '6px', border: 'none', cursor: 'pointer' }}
                   >
-                    <Send className="w-4 h-4" /> Enviar por WhatsApp
+                    Enviar Lista por WhatsApp
                   </button>
 
-                  <div className="border-t border-green-200 pt-2 text-xs text-gray-600 space-y-1">
-                    <p className="font-bold">Datos para pago:</p>
-                    <p>• Yape / Plin: 999-999-999</p>
-                    <p>• Transferencia BCP: 123-4567890-0-99</p>
+                  <div style={{ borderTop: '1px solid #bbf7d0', paddingTop: '8px', fontSize: '12px', color: '#4b5563', display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                    <p style={{ fontWeight: 'bold', margin: '0 0 2px 0' }}>Datos para pagar:</p>
+                    <p style={{ margin: 0 }}>• Yape / Plin: 999-999-999</p>
+                    <p style={{ margin: 0 }}>• Transferencia BCP: 123-4567890-0-99</p>
                   </div>
                 </div>
               )}
