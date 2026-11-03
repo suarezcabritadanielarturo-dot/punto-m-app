@@ -38,7 +38,9 @@ import {
   Award,
   AlertCircle,
   RotateCcw as ReturnIcon,
-  Banknote
+  Banknote,
+  ShieldCheck,
+  UserCheck
 } from 'lucide-react';
 import { auth, googleProvider, db, signInWithPopup, signOut } from './firebase';
 import { 
@@ -286,6 +288,18 @@ export default function App() {
     } catch (err) {
       console.error(err);
       alert("Error al actualizar privilegio.");
+    }
+  };
+
+  // Función para cambiar rol / privilegios del usuario (Admin, Chofer, Cajera, Encargado de Venta, Cliente)
+  const handleChangeUserRole = async (targetUid, newRole) => {
+    try {
+      const userRef = doc(db, 'users', targetUid);
+      await updateDoc(userRef, { role: newRole });
+      alert(`✅ ¡Privilegio actualizado a "${newRole.toUpperCase()}" con éxito!`);
+    } catch (err) {
+      console.error(err);
+      alert("Error al actualizar los privilegios del usuario.");
     }
   };
 
@@ -921,12 +935,15 @@ export default function App() {
                   <p className="font-bold text-white flex items-center gap-1">
                     {user.name} 
                     {userRole === 'admin' && <span className="bg-[#fbc02d] text-black text-[9px] px-1 rounded font-black">ADMIN</span>}
+                    {userRole === 'chofer' && <span className="bg-cyan-400 text-black text-[9px] px-1 rounded font-black">CHOFER</span>}
+                    {userRole === 'cajera' && <span className="bg-pink-400 text-black text-[9px] px-1 rounded font-black">CAJERA</span>}
+                    {userRole === 'encargado' && <span className="bg-indigo-400 text-black text-[9px] px-1 rounded font-black">ENCARGADO</span>}
                     {isVipClient && <span className="bg-amber-400 text-black text-[9px] px-1 rounded font-black">VIP</span>}
                   </p>
                   <p className="text-gray-300 text-[10px] truncate max-w-[120px]">{user.email}</p>
                 </div>
 
-                {userRole === 'admin' && (
+                {(userRole === 'admin' || userRole === 'encargado') && (
                   <button onClick={() => setView('admin')} title="Panel Admin" className="p-1.5 hover:bg-green-700 rounded-full text-[#fbc02d] transition">
                     <Settings size={18} />
                   </button>
@@ -955,7 +972,7 @@ export default function App() {
       </header>
 
       <main className="max-w-6xl mx-auto w-full px-4 py-6 flex-1">
-        {isInGracePeriod && userRole !== 'admin' && (
+        {isInGracePeriod && userRole !== 'admin' && userRole !== 'encargado' && (
           <div className="bg-amber-50 border-2 border-amber-400 p-4 rounded-2xl mb-6 shadow flex items-center gap-3">
             <AlertCircle className="text-amber-600 w-8 h-8 flex-shrink-0" />
             <div className="text-xs">
@@ -965,7 +982,7 @@ export default function App() {
           </div>
         )}
 
-        {(clientBlockedOrder || isStrictBlockedForMora) && userRole !== 'admin' ? (
+        {(clientBlockedOrder || isStrictBlockedForMora) && userRole !== 'admin' && userRole !== 'encargado' ? (
           <div className="max-w-md mx-auto bg-white p-8 rounded-2xl shadow-2xl border text-center space-y-4 my-12">
             <div className="bg-red-100 text-red-700 p-4 rounded-full w-16 h-16 flex items-center justify-center mx-auto">
               <ShieldAlert size={32} />
@@ -1349,7 +1366,7 @@ export default function App() {
               </div>
             )}
 
-            {view === 'admin' && userRole === 'admin' && (
+            {view === 'admin' && (userRole === 'admin' || userRole === 'encargado') && (
               <div className="space-y-6 max-w-5xl mx-auto">
                 <div className="bg-white p-6 rounded-2xl shadow border">
                   <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b pb-4 mb-6 gap-3">
@@ -1358,13 +1375,15 @@ export default function App() {
                     </h2>
                     
                     <div className="flex items-center gap-2">
-                      <button 
-                        onClick={handleResetToFactorySettings}
-                        disabled={isResetting}
-                        className="bg-amber-600 hover:bg-amber-700 text-white font-bold px-3 py-2 rounded-xl text-xs flex items-center gap-1 shadow transition"
-                      >
-                        <RotateCcw size={14} /> {isResetting ? 'Restaurando...' : 'Restaurar Fábrica'}
-                      </button>
+                      {userRole === 'admin' && (
+                        <button 
+                          onClick={handleResetToFactorySettings}
+                          disabled={isResetting}
+                          className="bg-amber-600 hover:bg-amber-700 text-white font-bold px-3 py-2 rounded-xl text-xs flex items-center gap-1 shadow transition"
+                        >
+                          <RotateCcw size={14} /> {isResetting ? 'Restaurando...' : 'Restaurar Fábrica'}
+                        </button>
+                      )}
 
                       <div className="flex bg-gray-100 p-1 rounded-xl text-xs font-bold gap-1 flex-wrap">
                         <button onClick={() => setAdminSubTab('orders')} className={`px-3 py-2 rounded-lg ${adminSubTab === 'orders' ? 'bg-[#0b6b38] text-white shadow' : 'text-gray-600'}`}>📦 Pedidos</button>
@@ -1376,7 +1395,7 @@ export default function App() {
                             </span>
                           )}
                         </button>
-                        <button onClick={() => setAdminSubTab('users')} className={`px-3 py-2 rounded-lg ${adminSubTab === 'users' ? 'bg-[#0b6b38] text-white shadow' : 'text-gray-600'}`}>👥 Usuarios</button>
+                        <button onClick={() => setAdminSubTab('users')} className={`px-3 py-2 rounded-lg ${adminSubTab === 'users' ? 'bg-[#0b6b38] text-white shadow' : 'text-gray-600'}`}>👥 Privilegios y Usuarios</button>
                         <button onClick={() => setAdminSubTab('corrupt')} className={`px-3 py-2 rounded-lg ${adminSubTab === 'corrupt' ? 'bg-red-600 text-white shadow' : 'text-gray-600'}`}>🚫 Pagos Corruptos ({corruptOrdersList.length})</button>
                         <button onClick={() => setAdminSubTab('accounting')} className={`px-3 py-2 rounded-lg ${adminSubTab === 'accounting' ? 'bg-[#0b6b38] text-white shadow' : 'text-gray-600'}`}>📊 Contabilidad</button>
                         <button onClick={() => setAdminSubTab('returns')} className={`px-3 py-2 rounded-lg ${adminSubTab === 'returns' ? 'bg-[#0b6b38] text-white shadow' : 'text-gray-600'}`}>🔄 Devoluciones</button>
@@ -1393,9 +1412,12 @@ export default function App() {
                         const isCash = order.paymentPreference === 'Efectivo';
                         const cashCollected = isCash ? Number(order.cashPayAmount || finalTotal) : 0;
                         
-                        // FÓRMULA CORREGIDA: Efectivo real retenido por el repartidor tras cobrar y dar vuelto
                         const cashRetainedByCourier = isCash ? Math.max(0, cashCollected - actualChangeGiven) : 0;
                         const totalToStore = cashRetainedByCourier;
+
+                        // Restricciones de botones según el rol
+                        const canManageFinances = userRole === 'admin' || userRole === 'cajera' || userRole === 'encargado';
+                        const canManageLogistics = userRole === 'admin' || userRole === 'chofer' || userRole === 'encargado';
 
                         return (
                           <div key={order.id} className="border p-4 rounded-xl bg-white shadow-sm flex flex-col justify-between gap-4">
@@ -1499,106 +1521,120 @@ export default function App() {
                                   <Printer size={14} /> Imprimir
                                 </button>
 
-                                <button onClick={() => handleUpdateOrderStatus(order.id, 'Alistado')} className="bg-purple-600 text-white p-2 rounded-lg text-xs font-bold flex items-center gap-1">
-                                  <PackageCheck size={14} /> Alistado
-                                </button>
+                                {canManageLogistics && (
+                                  <>
+                                    <button onClick={() => handleUpdateOrderStatus(order.id, 'Alistado')} className="bg-purple-600 text-white p-2 rounded-lg text-xs font-bold flex items-center gap-1">
+                                      <PackageCheck size={14} /> Alistado
+                                    </button>
 
-                                <button onClick={() => handleUpdateOrderStatus(order.id, 'En Camino')} className="bg-indigo-600 text-white p-2 rounded-lg text-xs font-bold flex items-center gap-1">
-                                  <Truck size={14} /> En Camino
-                                </button>
+                                    <button onClick={() => handleUpdateOrderStatus(order.id, 'En Camino')} className="bg-indigo-600 text-white p-2 rounded-lg text-xs font-bold flex items-center gap-1">
+                                      <Truck size={14} /> En Camino
+                                    </button>
 
-                                <button onClick={() => handleUpdateOrderStatus(order.id, 'Entregado')} className="bg-green-600 text-white p-2 rounded-lg text-xs font-bold flex items-center gap-1">
-                                  <CheckCircle size={14} /> Entregado
-                                </button>
+                                    <button onClick={() => handleUpdateOrderStatus(order.id, 'Entregado')} className="bg-green-600 text-white p-2 rounded-lg text-xs font-bold flex items-center gap-1">
+                                      <CheckCircle size={14} /> Entregado
+                                    </button>
 
-                                <button onClick={() => { setFailOrderId(order.id); setFailModalOpen(true); }} className="bg-amber-600 text-white p-2 rounded-lg text-xs font-bold flex items-center gap-1">
-                                  <AlertTriangle size={14} /> No entregado
-                                </button>
+                                    <button onClick={() => { setFailOrderId(order.id); setFailModalOpen(true); }} className="bg-amber-600 text-white p-2 rounded-lg text-xs font-bold flex items-center gap-1">
+                                      <AlertTriangle size={14} /> No entregado
+                                    </button>
+                                  </>
+                                )}
                               </div>
                             </div>
 
                             <div className="bg-gray-50 p-3 rounded-xl border flex flex-col sm:flex-row justify-between items-center gap-3">
                               <div className="text-xs">
-                                <p className="font-bold text-gray-700">Gestión Administrativa:</p>
+                                <p className="font-bold text-gray-700">Gestión Administrativa ({userRole.toUpperCase()}):</p>
                                 <p className="text-gray-500">Factura, montos, vueltos, devoluciones y pagos.</p>
                               </div>
 
                               <div className="flex flex-wrap items-center gap-2">
-                                <button 
-                                  onClick={() => {
-                                    setInvoiceOrderId(order.id);
-                                    setInvoiceModalOpen(true);
-                                  }}
-                                  className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-3 py-2 rounded-xl text-xs flex items-center gap-1 shadow"
-                                >
-                                  <Receipt size={14} /> {order.invoicePhoto ? '🔄 Cambiar Factura' : '📄 Subir Factura'}
-                                </button>
+                                {canManageFinances && (
+                                  <>
+                                    <button 
+                                      onClick={() => {
+                                        setInvoiceOrderId(order.id);
+                                        setInvoiceModalOpen(true);
+                                      }}
+                                      className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-3 py-2 rounded-xl text-xs flex items-center gap-1 shadow"
+                                    >
+                                      <Receipt size={14} /> {order.invoicePhoto ? '🔄 Cambiar Factura' : '📄 Subir Factura'}
+                                    </button>
 
-                                <button 
-                                  onClick={() => {
-                                    setFinalAmountOrderId(order.id);
-                                    setExactFinalAmount(order.total || order.approxTotal || '');
-                                    setFinalAmountModalOpen(true);
-                                  }}
-                                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-3 py-2 rounded-xl text-xs flex items-center gap-1 shadow"
-                                >
-                                  <DollarSign size={14} /> Total a Pagar
-                                </button>
+                                    <button 
+                                      onClick={() => {
+                                        setFinalAmountOrderId(order.id);
+                                        setExactFinalAmount(order.total || order.approxTotal || '');
+                                        setFinalAmountModalOpen(true);
+                                      }}
+                                      className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-3 py-2 rounded-xl text-xs flex items-center gap-1 shadow"
+                                    >
+                                      <DollarSign size={14} /> Total a Pagar
+                                    </button>
 
-                                <button 
-                                  onClick={() => {
-                                    setPayOrderId(order.id);
-                                    setSelectedPayMethodAdmin(order.paymentPreference || 'Efectivo');
-                                    setPayModalOpen(true);
-                                  }}
-                                  className={`px-3 py-2 rounded-xl font-bold text-xs flex items-center gap-1 shadow ${
-                                    order.isPaid ? 'bg-green-100 text-green-800 border border-green-300' : 'bg-blue-600 text-white hover:bg-blue-700'
-                                  }`}
-                                >
-                                  <CreditCard size={14} /> {order.isPaid ? '✅ Pagado' : '💵 Registrar Pago'}
-                                </button>
+                                    <button 
+                                      onClick={() => {
+                                        setPayOrderId(order.id);
+                                        setSelectedPayMethodAdmin(order.paymentPreference || 'Efectivo');
+                                        setPayModalOpen(true);
+                                      }}
+                                      className={`px-3 py-2 rounded-xl font-bold text-xs flex items-center gap-1 shadow ${
+                                        order.isPaid ? 'bg-green-100 text-green-800 border border-green-300' : 'bg-blue-600 text-white hover:bg-blue-700'
+                                      }`}
+                                    >
+                                      <CreditCard size={14} /> {order.isPaid ? '✅ Pagado' : '💵 Registrar Pago'}
+                                    </button>
+                                  </>
+                                )}
 
-                                <button 
-                                  onClick={() => {
-                                    setBaseChangeOrderId(order.id);
-                                    setBaseChangeAmount(order.baseChangeRecord?.amount || '');
-                                    setBaseChangeModalOpen(true);
-                                  }}
-                                  className="bg-cyan-600 hover:bg-cyan-700 text-white font-bold px-3 py-2 rounded-xl text-xs flex items-center gap-1 shadow"
-                                >
-                                  <Banknote size={14} /> Vuelto al Repartidor
-                                </button>
+                                {canManageLogistics && (
+                                  <>
+                                    <button 
+                                      onClick={() => {
+                                        setBaseChangeOrderId(order.id);
+                                        setBaseChangeAmount(order.baseChangeRecord?.amount || '');
+                                        setBaseChangeModalOpen(true);
+                                      }}
+                                      className="bg-cyan-600 hover:bg-cyan-700 text-white font-bold px-3 py-2 rounded-xl text-xs flex items-center gap-1 shadow"
+                                    >
+                                      <Banknote size={14} /> Vuelto al Repartidor
+                                    </button>
 
-                                <button 
-                                  onClick={() => {
-                                    setChangeOrderId(order.id);
-                                    setChangeAmountGiven(order.changeGivenRecord?.amount || '');
-                                    setChangeModalOpen(true);
-                                  }}
-                                  className="bg-teal-600 hover:bg-teal-700 text-white font-bold px-3 py-2 rounded-xl text-xs flex items-center gap-1 shadow"
-                                >
-                                  <Banknote size={14} /> Vuelto Entregado
-                                </button>
+                                    <button 
+                                      onClick={() => {
+                                        setChangeOrderId(order.id);
+                                        setChangeAmountGiven(order.changeGivenRecord?.amount || '');
+                                        setChangeModalOpen(true);
+                                      }}
+                                      className="bg-teal-600 hover:bg-teal-700 text-white font-bold px-3 py-2 rounded-xl text-xs flex items-center gap-1 shadow"
+                                    >
+                                      <Banknote size={14} /> Vuelto Entregado
+                                    </button>
 
-                                <button 
-                                  onClick={() => {
-                                    setProductReturnOrderId(order.id);
-                                    setProductReturnModalOpen(true);
-                                  }}
-                                  className="bg-amber-600 hover:bg-amber-700 text-white font-bold px-3 py-2 rounded-xl text-xs flex items-center gap-1 shadow"
-                                >
-                                  <ReturnIcon size={14} /> Dev. Producto
-                                </button>
+                                    <button 
+                                      onClick={() => {
+                                        setProductReturnOrderId(order.id);
+                                        setProductReturnModalOpen(true);
+                                      }}
+                                      className="bg-amber-600 hover:bg-amber-700 text-white font-bold px-3 py-2 rounded-xl text-xs flex items-center gap-1 shadow"
+                                    >
+                                      <ReturnIcon size={14} /> Dev. Producto
+                                    </button>
+                                  </>
+                                )}
 
-                                <button 
-                                  onClick={() => {
-                                    setCorruptOrderId(order.id);
-                                    setCorruptModalOpen(true);
-                                  }}
-                                  className="bg-red-600 hover:bg-red-700 text-white font-bold px-3 py-2 rounded-xl text-xs flex items-center gap-1 shadow"
-                                >
-                                  <ShieldAlert size={14} /> Pago Corrupto
-                                </button>
+                                {userRole === 'admin' && (
+                                  <button 
+                                    onClick={() => {
+                                      setCorruptOrderId(order.id);
+                                      setCorruptModalOpen(true);
+                                    }}
+                                    className="bg-red-600 hover:bg-red-700 text-white font-bold px-3 py-2 rounded-xl text-xs flex items-center gap-1 shadow"
+                                  >
+                                    <ShieldAlert size={14} /> Pago Corrupto
+                                  </button>
+                                )}
                               </div>
                             </div>
 
@@ -1677,33 +1713,59 @@ export default function App() {
                     </div>
                   )}
 
+                  {/* PESTAÑA DE PRIVILEGIOS Y USUARIOS ACTUALIZADA */}
                   {adminSubTab === 'users' && (
                     <div className="space-y-4">
                       <h3 className="font-bold text-base text-gray-800 flex items-center gap-2">
-                        <Users size={20} className="text-[#0b6b38]" /> Gestión de Usuarios e Historiales
+                        <ShieldCheck size={20} className="text-[#0b6b38]" /> Gestión de Privilegios y Roles de Personal
                       </h3>
+                      <p className="text-xs text-gray-600">Asigne o desactive los privilegios para otorgar los permisos correspondientes (Admin, Chofer, Cajera, Encargado de Venta).</p>
 
                       <div className="space-y-4">
                         {usersList.map(u => {
                           const userOrders = orders.filter(o => o.clientEmail === u.email || o.clientUid === u.id);
-                          const userCorruptCases = userOrders.filter(o => o.isCorrupt);
+                          const currentRole = u.role || 'client';
 
                           return (
                             <div key={u.id} className="border p-4 rounded-xl bg-white shadow-sm space-y-3">
-                              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b pb-2 gap-2">
+                              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b pb-3 gap-3">
                                 <div>
-                                  <p className="font-bold text-sm text-gray-900">{u.name} ({u.email})</p>
-                                  <p className="text-xs text-gray-500">Rol: <strong>{u.role}</strong> | Estado: {u.isVip ? '⭐ Cliente VIP' : 'Cliente Estándar'}</p>
+                                  <p className="font-bold text-sm text-gray-900 flex items-center gap-2">
+                                    {u.name} ({u.email})
+                                    <span className={`text-[10px] px-2 py-0.5 rounded font-black uppercase ${
+                                      currentRole === 'admin' ? 'bg-[#fbc02d] text-black' :
+                                      currentRole === 'encargado' ? 'bg-indigo-600 text-white' :
+                                      currentRole === 'cajera' ? 'bg-pink-600 text-white' :
+                                      currentRole === 'chofer' ? 'bg-cyan-600 text-white' : 'bg-gray-200 text-gray-700'
+                                    }`}>
+                                      {currentRole}
+                                    </span>
+                                  </p>
+                                  <p className="text-xs text-gray-500">Estado VIP: {u.isVip ? '⭐ Cliente VIP con contrato' : 'Cliente Estándar'}</p>
                                 </div>
 
-                                <button 
-                                  onClick={() => handleToggleVip(u.id, u.isVip)}
-                                  className={`px-3 py-2 rounded-xl font-bold text-xs flex items-center gap-1 shadow transition ${
-                                    u.isVip ? 'bg-amber-100 text-amber-800 border border-amber-300' : 'bg-[#0b6b38] text-white hover:bg-green-700'
-                                  }`}
-                                >
-                                  <Award size={14} /> {u.isVip ? 'Quitar Privilegio VIP' : 'Asignar Privilegio VIP'}
-                                </button>
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <select 
+                                    value={currentRole} 
+                                    onChange={(e) => handleChangeUserRole(u.id, e.target.value)}
+                                    className="border border-green-300 bg-green-50 p-2 rounded-xl text-xs font-bold text-green-900 shadow-sm"
+                                  >
+                                    <option value="client">👤 Cliente / Estándar</option>
+                                    <option value="chofer">🚚 Chofer (Repartidor)</option>
+                                    <option value="cajera">💵 Cajera (Pagos y Facturación)</option>
+                                    <option value="encargado">👔 Encargado de Venta</option>
+                                    <option value="admin">⭐ Administrador Total</option>
+                                  </select>
+
+                                  <button 
+                                    onClick={() => handleToggleVip(u.id, u.isVip)}
+                                    className={`px-3 py-2 rounded-xl font-bold text-xs flex items-center gap-1 shadow transition ${
+                                      u.isVip ? 'bg-amber-100 text-amber-800 border border-amber-300' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                                    }`}
+                                  >
+                                    <Award size={14} /> {u.isVip ? 'Quitar VIP' : 'Hacer VIP'}
+                                  </button>
+                                </div>
                               </div>
 
                               <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
@@ -1723,20 +1785,15 @@ export default function App() {
                                   )}
                                 </div>
 
-                                <div className="bg-red-50 p-3 rounded-lg border border-red-200">
-                                  <p className="font-bold text-red-800 mb-1">⚠️ Historial de Casos / Incidencias ({userCorruptCases.length}):</p>
-                                  {userCorruptCases.length === 0 ? (
-                                    <p className="text-gray-400">Sin incidencias registradas.</p>
-                                  ) : (
-                                    <div className="max-h-24 overflow-y-auto space-y-1">
-                                      {userCorruptCases.map(c => (
-                                        <div key={c.id} className="flex justify-between border-b border-red-200 pb-1 text-red-700">
-                                          <span>#{c.id.slice(-6)}</span>
-                                          <span className="truncate max-w-[150px]">{c.corruptReason}</span>
-                                        </div>
-                                      ))}
-                                    </div>
-                                  )}
+                                <div className="bg-blue-50 p-3 rounded-lg border border-blue-200">
+                                  <p className="font-bold text-blue-900 mb-1">🔐 Permisos Asignados al Rol ({currentRole.toUpperCase()}):</p>
+                                  <ul className="text-gray-700 space-y-1">
+                                    {currentRole === 'admin' && <li>• Acceso total a todas las funciones, contabilidad y ajustes.</li>}
+                                    {currentRole === 'encargado' && <li>• Gestión de pedidos, control de personal, facturas y reportes.</li>}
+                                    {currentRole === 'cajera' && <li>• Registro de pagos, subida de facturas, control de efectivo y vueltos.</li>}
+                                    {currentRole === 'chofer' && <li>• Cambio de estado de entregas (En camino, entregado), registro de vueltos.</li>}
+                                    {currentRole === 'client' && <li>• Visualización de catálogo, generación de pedidos y seguimiento personal.</li>}
+                                  </ul>
                                 </div>
                               </div>
                             </div>
@@ -2086,7 +2143,7 @@ export default function App() {
                   </label>
                   <div className="flex justify-end gap-2">
                     <button onClick={() => setReturnModalOpen(false)} className="bg-gray-200 px-4 py-2 rounded-lg text-xs">Cancelar</button>
-                    <button onClick={handleSaveReturnProof} className="bg-green-600 text-white font-bold px-4 py-2 rounded-lg text-xs font-bold">Confirmar</button>
+                    <button onClick={handleSaveReturnProof} className="bg-green-600 text-white px-4 py-2 rounded-lg text-xs font-bold">Confirmar</button>
                   </div>
                 </div>
               </div>
