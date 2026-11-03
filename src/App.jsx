@@ -72,6 +72,8 @@ export default function App() {
   const [paymentPreference, setPaymentPreference] = useState('Efectivo');
   const [paymentTiming, setPaymentTiming] = useState('Contra Entrega');
 
+  // Control para evitar duplicar pedidos al modificar y volver atrás
+  const [currentOrderId, setCurrentOrderId] = useState(null);
   const [whatsappSent, setWhatsappSent] = useState(false);
 
   const [failModalOpen, setFailModalOpen] = useState(false);
@@ -217,6 +219,7 @@ export default function App() {
 
       setCart([]);
       setOrders([]);
+      setCurrentOrderId(null);
       setManualCaptureSum('');
       setDayClosed(false);
       setClosedDayData(null);
@@ -280,7 +283,7 @@ export default function App() {
 
     if (cart.length === 0) return;
 
-    const newOrderData = {
+    const orderData = {
       clientUid: user.uid,
       clientName: user.name,
       clientEmail: user.email,
@@ -302,11 +305,22 @@ export default function App() {
       failReason: '',
       returnStatus: 'No aplica',
       returnProof: '',
-      createdAt: new Date()
+      updatedAt: new Date()
     };
 
     try {
-      await addDoc(collection(db, 'orders'), newOrderData);
+      if (currentOrderId) {
+        // Si ya existe un pedido activo para este flujo, lo actualizamos para no duplicar
+        const orderRef = doc(db, 'orders', currentOrderId);
+        await updateDoc(orderRef, orderData);
+      } else {
+        // Si es la primera vez que genera el recibo, creamos el documento
+        const docRef = await addDoc(collection(db, 'orders'), {
+          ...orderData,
+          createdAt: new Date()
+        });
+        setCurrentOrderId(docRef.id);
+      }
       setWhatsappSent(false);
       setView('receipt');
     } catch (err) {
@@ -830,6 +844,7 @@ export default function App() {
                     alert("⚠️ Por favor, envíe primero el pedido por WhatsApp para poder ver su seguimiento.");
                     return;
                   }
+                  setCurrentOrderId(null); // Limpiamos el borrador para que un futuro pedido sea nuevo
                   setView('tracking');
                 }}
                 className={`w-full font-bold py-3 rounded-xl text-xs shadow flex items-center justify-center gap-2 transition ${
@@ -849,7 +864,6 @@ export default function App() {
           </div>
         )}
 
-        {/* PANEL ADMIN CON BOTÓN DE RESTAURAR VALORES DE FÁBRICA */}
         {view === 'admin' && userRole === 'admin' && (
           <div className="space-y-6 max-w-5xl mx-auto">
             <div className="bg-white p-6 rounded-2xl shadow border">
@@ -1018,7 +1032,6 @@ export default function App() {
           </div>
         )}
 
-        {/* MODAL REGISTRAR PAGO */}
         {payModalOpen && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
             <div className="bg-white p-6 rounded-2xl max-w-md w-full shadow-2xl space-y-4">
@@ -1057,7 +1070,6 @@ export default function App() {
           </div>
         )}
 
-        {/* MODAL SUBIR FACTURA */}
         {invoiceModalOpen && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
             <div className="bg-white p-6 rounded-2xl max-w-md w-full shadow-2xl space-y-4">
@@ -1082,7 +1094,6 @@ export default function App() {
           </div>
         )}
 
-        {/* MODAL INGRESAR MONTO DEFINITIVO */}
         {finalAmountModalOpen && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
             <div className="bg-white p-6 rounded-2xl max-w-md w-full shadow-2xl space-y-4">
