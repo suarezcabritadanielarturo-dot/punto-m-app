@@ -56,7 +56,7 @@ const BASE_PRODUCTS = [
 export default function App() {
   const [user, setUser] = useState(null);
   const [userRole, setUserRole] = useState('client'); 
-  const [view, setView] = useState('catalog'); // 'catalog', 'tracking', 'receipt', 'admin'
+  const [view, setView] = useState('catalog'); 
   const [adminSubTab, setAdminSubTab] = useState('orders');
   
   const [products, setProducts] = useState(BASE_PRODUCTS.map((p, i) => ({ id: String(i + 1), ...p })));
@@ -583,7 +583,6 @@ export default function App() {
   const uniqueClients = Array.from(new Set(orders.map(o => o.clientEmail || o.clientName))).filter(Boolean);
   const filteredOrders = selectedClientFilter === 'all' ? orders : orders.filter(o => (o.clientEmail === selectedClientFilter || o.clientName === selectedClientFilter));
   
-  // Pedidos pertenecientes al cliente logueado
   const myOrders = user ? orders.filter(o => o.clientUid === user.uid || o.clientEmail === user.email) : [];
 
   return (
@@ -599,7 +598,6 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-3">
-            {/* BOTÓN SEGUIMIENTO DE PEDIDOS PARA CLIENTES */}
             {user && (
               <button 
                 onClick={() => setView('tracking')}
@@ -661,7 +659,6 @@ export default function App() {
       </header>
 
       <main className="max-w-6xl mx-auto w-full px-4 py-6 flex-1">
-        {/* VISTA 1: CATÁLOGO DE PRODUCTOS */}
         {view === 'catalog' && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div className="lg:col-span-2 space-y-6">
@@ -818,7 +815,7 @@ export default function App() {
           </div>
         )}
 
-        {/* VISTA 2: SEGUIMIENTO DE PEDIDOS PARA EL CLIENTE */}
+        {/* VISTA 2: SEGUIMIENTO DE PEDIDOS PARA EL CLIENTE (CON CAPTURES VISIBLES) */}
         {view === 'tracking' && (
           <div className="max-w-3xl mx-auto space-y-6">
             <div className="bg-white p-6 rounded-2xl shadow border">
@@ -826,7 +823,7 @@ export default function App() {
                 <Truck className="text-[#0b6b38]" /> Seguimiento de Mis Pedidos
               </h2>
               <p className="text-xs text-gray-500 mb-6">
-                Consulta el estado de preparación y despacho de tus pedidos en tiempo real.
+                Consulta el estado, los comprobantes de pago aprobados y las devoluciones en tiempo real.
               </p>
 
               {myOrders.length === 0 ? (
@@ -840,7 +837,6 @@ export default function App() {
               ) : (
                 <div className="space-y-6">
                   {myOrders.map(order => {
-                    // Mapeo de avance de estados (0 a 100%)
                     let stepIndex = 1;
                     if (order.status === 'Pagado') stepIndex = 2;
                     if (order.status === 'Alistado') stepIndex = 3;
@@ -867,7 +863,7 @@ export default function App() {
                           </span>
                         </div>
 
-                        {/* LÍNEA DE TIEMPO Y PROGRESO DE ESTADO */}
+                        {/* LÍNEA DE TIEMPO */}
                         {!isFailed ? (
                           <div className="py-2">
                             <div className="flex justify-between items-center text-[10px] font-bold text-gray-500 mb-2">
@@ -891,10 +887,43 @@ export default function App() {
                             </div>
                           </div>
                         ) : (
-                          <div className="bg-red-50 border border-red-200 p-3 rounded-xl text-xs text-red-800">
+                          <div className="bg-red-50 border border-red-200 p-3 rounded-xl text-xs text-red-800 space-y-1">
                             <p className="font-bold">⚠️ El pedido no pudo ser entregado o fue cancelado.</p>
-                            {order.failReason && <p className="mt-1">Motivo: {order.failReason}</p>}
-                            {order.returnStatus && <p className="mt-1 font-bold">Estado de reembolso: {order.returnStatus}</p>}
+                            {order.failReason && <p>Motivo: {order.failReason}</p>}
+                            {order.returnStatus && <p className="font-bold">Estado de reembolso: {order.returnStatus}</p>}
+                            
+                            {/* BOTÓN PARA QUE EL CLIENTE VEA EL CAPTURE DE LA DEVOLUCIÓN */}
+                            {order.returnProof && (
+                              <button 
+                                onClick={() => setPreviewImage(order.returnProof)}
+                                className="mt-2 text-xs bg-red-600 text-white hover:bg-red-700 px-3 py-1.5 rounded-lg font-bold flex items-center gap-1.5 shadow"
+                              >
+                                <Eye size={14} /> Ver Comprobante de Reembolso / Devolución
+                              </button>
+                            )}
+                          </div>
+                        )}
+
+                        {/* MÉTODO DE PAGO Y BOTÓN DE CAPTURE PARA EL CLIENTE */}
+                        {order.paymentMethod && (
+                          <div className="bg-blue-50 border border-blue-200 p-3 rounded-xl text-xs flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+                            <div>
+                              <p className="font-bold text-blue-900">💳 Método de Pago: {order.paymentMethod}</p>
+                              {order.paymentProof ? (
+                                <p className="text-blue-700 text-[11px]">El comprobante de pago fue verificado y cargado por el sistema.</p>
+                              ) : (
+                                <p className="text-blue-700 text-[11px]">Registrado como pago en efectivo.</p>
+                              )}
+                            </div>
+
+                            {order.paymentProof && (
+                              <button 
+                                onClick={() => setPreviewImage(order.paymentProof)}
+                                className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-3 py-1.5 rounded-lg text-xs flex items-center gap-1 shadow"
+                              >
+                                <Eye size={14} /> Ver Capture de Pago Aprobado
+                              </button>
+                            )}
                           </div>
                         )}
 
@@ -964,7 +993,7 @@ export default function App() {
                   `-----------------------------------\n` +
                   `📋 *Detalle:*\n` + cart.map(i => `• ${i.qty}x ${i.name} - S/ ${(i.price * i.qty).toFixed(2)}`).join('\n') + `\n` +
                   `-----------------------------------\n` +
-                  `💰 *Total:* S/ ${cartTotal.toFixed(2)}\n` +
+                  `💰 *Total:* S/ {cartTotal.toFixed(2)}\n` +
                   (clientLocation ? `📍 *Ubicación:*\n${clientLocation.mapUrl}` : '')
                 )}`}
                 target="_blank"
@@ -983,7 +1012,7 @@ export default function App() {
           </div>
         )}
 
-        {/* VISTA 4: PANEL ADMIN CON NUEVOS BOTONES (ALISTADO Y EN CAMINO) */}
+        {/* VISTA 4: PANEL ADMIN */}
         {view === 'admin' && userRole === 'admin' && (
           <div className="space-y-6 max-w-5xl mx-auto">
             <div className="bg-white p-6 rounded-2xl shadow border">
@@ -1024,7 +1053,6 @@ export default function App() {
                 </div>
               </div>
 
-              {/* PESTAÑA 1 ADMIN: PEDIDOS CON CAMBIOS DE ESTADO */}
               {adminSubTab === 'orders' && (
                 <div className="mb-8 space-y-4">
                   <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
@@ -1078,7 +1106,6 @@ export default function App() {
                             {order.failReason && <p className="text-red-600 font-bold bg-red-50 p-1.5 rounded border border-red-200 mt-1">⚠️ No entrega: {order.failReason}</p>}
                           </div>
 
-                          {/* BOTONES DE CAMBIO DE ESTADO (ALISTADO Y EN CAMINO) */}
                           <div className="flex flex-wrap items-center gap-2">
                             <button onClick={() => handlePrintOrder(order)} className="bg-gray-800 hover:bg-black text-white p-2 rounded-lg text-xs flex items-center gap-1 font-bold">
                               <Printer size={14} /> Imprimir
@@ -1094,7 +1121,6 @@ export default function App() {
                               <button 
                                 onClick={() => handleUpdateOrderStatus(order.id, 'Alistado')}
                                 className="bg-purple-600 hover:bg-purple-700 text-white p-2 rounded-lg text-xs font-bold flex items-center gap-1"
-                                title="Marcar como Alistado para entrega"
                               >
                                 <PackageCheck size={14} /> Alistado
                               </button>
@@ -1104,7 +1130,6 @@ export default function App() {
                               <button 
                                 onClick={() => handleUpdateOrderStatus(order.id, 'En Camino')}
                                 className="bg-indigo-600 hover:bg-indigo-700 text-white p-2 rounded-lg text-xs font-bold flex items-center gap-1"
-                                title="Marcar como En Camino"
                               >
                                 <Truck size={14} /> En Camino
                               </button>
@@ -1134,7 +1159,6 @@ export default function App() {
                 </div>
               )}
 
-              {/* PESTAÑA CONTABILIDAD */}
               {adminSubTab === 'accounting' && (
                 <div className="space-y-6">
                   <div className="bg-green-50 border border-green-200 p-5 rounded-2xl flex flex-col md:flex-row justify-between items-center gap-4">
@@ -1222,7 +1246,6 @@ export default function App() {
                 </div>
               )}
 
-              {/* PESTAÑA DEVOLUCIONES */}
               {adminSubTab === 'returns' && (
                 <div className="space-y-4">
                   <h3 className="font-bold text-base text-gray-800 flex items-center gap-2">
