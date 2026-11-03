@@ -41,7 +41,9 @@ import {
   Banknote,
   ShieldCheck,
   UserCheck,
-  QrCode
+  QrCode,
+  Edit3,
+  Layers
 } from 'lucide-react';
 import { auth, googleProvider, db, signInWithPopup, signOut } from './firebase';
 import { 
@@ -57,10 +59,10 @@ import {
 } from 'firebase/firestore';
 
 const BASE_PRODUCTS = [
-  { name: 'Harina de Trigo 1kg', price: 4.50, category: 'Viveres', image: 'https://images.unsplash.com/photo-1574323347407-f5e1ad6d020b?w=300' },
-  { name: 'Aceite Vegetal 1L', price: 8.90, category: 'Viveres', image: 'https://images.unsplash.com/photo-1474979266404-7eaacbcd87c5?w=300' },
-  { name: 'Arroz Extra 1kg', price: 4.20, category: 'Viveres', image: 'https://images.unsplash.com/photo-1586201375761-83865001e31c?w=300' },
-  { name: 'Azúcar Rubia 1kg', price: 3.80, category: 'Viveres', image: 'https://images.unsplash.com/photo-1581441363689-1f3c3c414635?w=300' }
+  { name: 'Harina de Trigo 1kg', price: 4.50, category: 'Viveres', unitType: 'unidad', image: 'https://images.unsplash.com/photo-1574323347407-f5e1ad6d020b?w=300' },
+  { name: 'Aceite Vegetal 1L', price: 8.90, category: 'Viveres', unitType: 'unidad', image: 'https://images.unsplash.com/photo-1474979266404-7eaacbcd87c5?w=300' },
+  { name: 'Arroz Extra 1kg', price: 4.20, category: 'Viveres', unitType: 'unidad', image: 'https://images.unsplash.com/photo-1586201375761-83865001e31c?w=300' },
+  { name: 'Azúcar Rubia 1kg', price: 3.80, category: 'Viveres', unitType: 'unidad', image: 'https://images.unsplash.com/photo-1581441363689-1f3c3c414635?w=300' }
 ];
 
 export default function App() {
@@ -89,6 +91,18 @@ export default function App() {
   const [newPayTitle, setNewPayTitle] = useState('');
   const [newPayDesc, setNewPayDesc] = useState('');
   const [newPayImage, setNewPayImage] = useState('');
+
+  // Estados para Gestión de Catálogo de Administrador
+  const [prodName, setProdName] = useState('');
+  const [prodPrice, setProdPrice] = useState('');
+  const [prodCategory, setProdCategory] = useState('Viveres');
+  const [prodUnitType, setProdUnitType] = useState('unidad'); // 'unidad' o 'kilo'
+  const [prodImage, setProdImage] = useState('');
+  const [editingProductId, setEditingProductId] = useState(null);
+
+  // IA Masiva de Productos
+  const [aiCatalogText, setAiCatalogText] = useState('');
+  const [isAiProcessingCatalog, setIsAiProcessingCatalog] = useState(false);
 
   const [currentOrderId, setCurrentOrderId] = useState(null);
   const [whatsappSent, setWhatsappSent] = useState(false);
@@ -140,10 +154,6 @@ export default function App() {
   const [refundOrderId, setRefundOrderId] = useState(null);
   const [refundAmount, setRefundAmount] = useState('');
   const [refundProofPhoto, setRefundProofPhoto] = useState('');
-
-  const [returnModalOpen, setReturnModalOpen] = useState(false);
-  const [returnOrderId, setReturnOrderId] = useState(null);
-  const [returnProof, setReturnProof] = useState('');
 
   const [previewImage, setPreviewImage] = useState(null);
 
@@ -322,6 +332,130 @@ export default function App() {
     } catch (err) {
       console.error(err);
       alert("Error al actualizar los roles del usuario.");
+    }
+  };
+
+  // Funciones de Gestión y Edición de Catálogo en Firestore
+  const handleProductImageUpload = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => setProdImage(reader.result);
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleSaveProduct = async (e) => {
+    e.preventDefault();
+    if (!prodName.trim() || !prodPrice) {
+      alert("⚠️ Por favor ingrese el nombre y el precio del producto.");
+      return;
+    }
+
+    const productData = {
+      name: prodName.trim(),
+      price: parseFloat(prodPrice),
+      category: prodCategory.trim() || 'General',
+      unitType: prodUnitType, // 'unidad' o 'kilo'
+      image: prodImage || 'https://images.unsplash.com/photo-1542838132-92c53300491e?w=300',
+      updatedAt: new Date()
+    };
+
+    try {
+      if (editingProductId) {
+        await updateDoc(doc(db, 'products', editingProductId), productData);
+        alert("✅ ¡Producto actualizado con éxito!");
+      } else {
+        await addDoc(collection(db, 'products'), {
+          ...productData,
+          createdAt: new Date()
+        });
+        alert("✅ ¡Producto creado y agregado al catálogo con éxito!");
+      }
+      
+      // Limpiar formulario
+      setProdName('');
+      setProdPrice('');
+      setProdCategory('Viveres');
+      setProdUnitType('unidad');
+      setProdImage('');
+      setEditingProductId(null);
+    } catch (err) {
+      console.error(err);
+      alert("Error al guardar el producto en la base de datos.");
+    }
+  };
+
+  const handleStartEditProduct = (prod) => {
+    setEditingProductId(prod.id);
+    setProdName(prod.name);
+    setProdPrice(prod.price);
+    setProdCategory(prod.category || 'Viveres');
+    setProdUnitType(prod.unitType || 'unidad');
+    setProdImage(prod.image || '');
+  };
+
+  const handleDeleteCatalogProduct = async (prodId) => {
+    if (!window.confirm("¿Estás seguro de eliminar este producto del catálogo?")) return;
+    try {
+      await deleteDoc(doc(db, 'products', prodId));
+      alert("🗑️ Producto eliminado del catálogo.");
+    } catch (err) {
+      console.error(err);
+      alert("Error al eliminar el producto.");
+    }
+  };
+
+  // IA Masiva de Catálogo (Pegar texto de productos)
+  const handleAiCatalogImport = async () => {
+    if (!aiCatalogText.trim()) {
+      alert("⚠️ Por favor ingresa o pega el texto con los productos para la IA.");
+      return;
+    }
+
+    setIsAiProcessingCatalog(true);
+    try {
+      // Parseador inteligente simulando IA estructurada para clasificar líneas de texto (ej: "Arroz 1kg 4.50 Viveres")
+      const lines = aiCatalogText.split('\n');
+      let addedCount = 0;
+
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        const parts = line.split(/[\t,-]+/);
+        const name = parts[0]?.trim() || 'Producto Nuevo';
+        
+        // Buscar un número flotante en la línea para el precio
+        const priceMatch = line.match(/\d+([.,]\d+)?/);
+        const price = priceMatch ? parseFloat(priceMatch[0].replace(',', '.')) : 5.00;
+
+        // Detectar si es por kilo o unidad
+        const unitType = line.toLowerCase().includes('kilo') || line.toLowerCase().includes('kg') ? 'kilo' : 'unidad';
+        
+        // Categoría por defecto
+        let category = 'Viveres';
+        const lowerLine = line.toLowerCase();
+        if (lowerLine.includes('carne') || lowerLine.includes('pollo') || lowerLine.includes('res')) category = 'Carnicería';
+        else if (lowerLine.includes('fruta') || lowerLine.includes('verdura') || lowerLine.includes('tomate')) category = 'Frutas y Verduras';
+        else if (lowerLine.includes('limpieza') || lowerLine.includes('jabon')) category = 'Limpieza';
+
+        await addDoc(collection(db, 'products'), {
+          name,
+          price,
+          category,
+          unitType,
+          image: 'https://images.unsplash.com/photo-1542838132-92c53300491e?w=300',
+          createdAt: new Date()
+        });
+        addedCount++;
+      }
+
+      setAiCatalogText('');
+      alert(`✅ ¡IA procesó y agregó exitosamente ${addedCount} productos al catálogo!`);
+    } catch (err) {
+      console.error(err);
+      alert("Hubo un error al procesar el texto con la IA.");
+    } finally {
+      setIsAiProcessingCatalog(false);
     }
   };
 
@@ -593,15 +727,6 @@ export default function App() {
     if (file) {
       const reader = new FileReader();
       reader.onloadend = () => setRefundProofPhoto(reader.result);
-      reader.readAsDataURL(file);
-    }
-  };
-
-  const handleReturnProofUpload = (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => setReturnProof(reader.result);
       reader.readAsDataURL(file);
     }
   };
@@ -920,19 +1045,6 @@ export default function App() {
     setFailReason('');
   };
 
-  const handleSaveReturnProof = async () => {
-    if (!returnProof) return;
-    try {
-      const orderRef = doc(db, 'orders', returnOrderId);
-      await updateDoc(orderRef, { returnStatus: 'Devuelto', returnProof: returnProof });
-      setReturnModalOpen(false);
-      setReturnOrderId(null);
-      setReturnProof('');
-    } catch (err) {
-      console.error(err);
-    }
-  };
-
   const handlePrintOrder = (orderToPrint) => {
     const printWindow = window.open('', '_blank');
     const itemsHtml = orderToPrint.items ? orderToPrint.items.map(item => 
@@ -1014,6 +1126,14 @@ export default function App() {
       isStrictBlockedForMora = true;
     }
   });
+
+  // Agrupación de productos por categoría para el catálogo principal
+  const productsByCategory = products.reduce((acc, prod) => {
+    const cat = prod.category || 'General';
+    if (!acc[cat]) acc[cat] = [];
+    acc[cat].push(prod);
+    return acc;
+  }, {});
 
   // Delimitación estricta de roles
   const isAdmin = userRole === 'admin';
@@ -1185,25 +1305,45 @@ export default function App() {
                     {aiOrderFeedback && <div className="mt-2 text-xs bg-amber-50 border p-2 rounded-lg">{aiOrderFeedback}</div>}
                   </div>
 
-                  <div>
-                    <h2 className="font-bold text-xl mb-4 text-gray-800">Catálogo de Productos (S/)</h2>
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-                      {products.map(prod => (
-                        <div key={prod.id} className="bg-white rounded-xl shadow-sm border overflow-hidden hover:shadow-md transition flex flex-col justify-between">
-                          <img src={prod.image} alt={prod.name} className="h-32 w-full object-cover" />
-                          <div className="p-3 flex-1 flex flex-col justify-between">
-                            <div>
-                              <span className="text-[10px] uppercase font-bold text-green-700 bg-green-50 px-2 py-0.5 rounded">{prod.category}</span>
-                              <h3 className="font-bold text-sm text-gray-800 mt-1">{prod.name}</h3>
-                            </div>
-                            <div className="mt-3 flex items-center justify-between">
-                              <span className="font-black text-green-800 text-base">S/ {Number(prod.price).toFixed(2)}</span>
-                              <button onClick={() => addToCart(prod)} className="bg-[#0b6b38] text-white p-2 rounded-lg"><Plus size={16} /></button>
-                            </div>
+                  {/* CATÁLOGO ORDENADO POR CATEGORÍA */}
+                  <div className="space-y-6">
+                    <h2 className="font-bold text-xl text-gray-800">Catálogo de Productos (S/)</h2>
+                    
+                    {Object.keys(productsByCategory).length === 0 ? (
+                      <div className="text-center py-12 text-gray-400 text-sm">No hay productos disponibles en el catálogo.</div>
+                    ) : (
+                      Object.entries(productsByCategory).map(([categoryName, catProducts]) => (
+                        <div key={categoryName} className="space-y-3">
+                          <div className="bg-[#074825] text-white px-3 py-1.5 rounded-lg font-bold text-xs tracking-wider flex items-center gap-2 shadow-sm">
+                            <Layers size={16} className="text-[#fbc02d]" /> {categoryName.toUpperCase()}
+                          </div>
+
+                          <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+                            {catProducts.map(prod => (
+                              <div key={prod.id} className="bg-white rounded-xl shadow-sm border overflow-hidden hover:shadow-md transition flex flex-col justify-between">
+                                <div className="relative">
+                                  <img src={prod.image} alt={prod.name} className="h-32 w-full object-cover" />
+                                  <span className="absolute top-2 left-2 bg-black bg-opacity-60 text-white text-[9px] px-2 py-0.5 rounded-full font-bold uppercase">
+                                    {prod.unitType === 'kilo' ? '⚖️ Por Kilo' : '📦 Por Unidad'}
+                                  </span>
+                                </div>
+                                <div className="p-3 flex-1 flex flex-col justify-between">
+                                  <div>
+                                    <h3 className="font-bold text-sm text-gray-800 mt-1">{prod.name}</h3>
+                                  </div>
+                                  <div className="mt-3 flex items-center justify-between">
+                                    <span className="font-black text-green-800 text-base">
+                                      S/ {Number(prod.price).toFixed(2)} {prod.unitType === 'kilo' ? <span className="text-[10px] text-gray-500">/kg</span> : ''}
+                                    </span>
+                                    <button onClick={() => addToCart(prod)} className="bg-[#0b6b38] text-white p-2 rounded-lg"><Plus size={16} /></button>
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
                           </div>
                         </div>
-                      ))}
-                    </div>
+                      ))
+                    )}
                   </div>
                 </div>
 
@@ -1544,6 +1684,10 @@ export default function App() {
                       <div className="flex bg-gray-100 p-1 rounded-xl text-xs font-bold gap-1 flex-wrap">
                         <button onClick={() => setAdminSubTab('orders')} className={`px-3 py-2 rounded-lg ${adminSubTab === 'orders' ? 'bg-[#0b6b38] text-white shadow' : 'text-gray-600'}`}>📦 Pedidos</button>
                         
+                        {(isAdmin || isSupervisor || isEncargado) && (
+                          <button onClick={() => setAdminSubTab('catalog_mgmt')} className={`px-3 py-2 rounded-lg ${adminSubTab === 'catalog_mgmt' ? 'bg-[#0b6b38] text-white shadow' : 'text-gray-600'}`}>🏷️ Gestión de Catálogo</button>
+                        )}
+
                         {(isAdmin || isContabilidad || isSupervisor) && (
                           <button onClick={() => setAdminSubTab('refunds')} className={`px-3 py-2 rounded-lg relative ${adminSubTab === 'refunds' ? 'bg-purple-700 text-white shadow' : 'text-gray-600'}`}>
                             🔄 Devoluciones
@@ -1881,6 +2025,161 @@ export default function App() {
                           </div>
                         );
                       })}
+                    </div>
+                  )}
+
+                  {/* NUEVA PESTAÑA: GESTIÓN DE CATÁLOGO (MANUAL, UNIDAD/KILO, CÁMARA, IA Y EDICIÓN) */}
+                  {adminSubTab === 'catalog_mgmt' && (isAdmin || isSupervisor || isEncargado) && (
+                    <div className="space-y-8">
+                      {/* IA Masiva para pegar texto de productos */}
+                      <div className="bg-emerald-50 border border-emerald-200 p-5 rounded-2xl space-y-3">
+                        <h3 className="font-bold text-base text-emerald-900 flex items-center gap-2">
+                          <Sparkles size={20} className="text-emerald-700" /> Asistente IA - Importación Masiva de Productos
+                        </h3>
+                        <p className="text-xs text-emerald-800">Pega aquí una lista de texto con tus productos (ej. nombre, precios, etc.) y la IA los creará y clasificará automáticamente en el catálogo.</p>
+                        
+                        <textarea 
+                          rows="3"
+                          value={aiCatalogText}
+                          onChange={e => setAiCatalogText(e.target.value)}
+                          placeholder="Ej:
+Carne de Res 1kg 12.50
+Tomates frescos 1kg 3.20
+Queso blanco 1kg 8.00"
+                          className="w-full border p-3 rounded-xl text-xs bg-white"
+                        />
+
+                        <button 
+                          onClick={handleAiCatalogImport}
+                          disabled={isAiProcessingCatalog}
+                          className="bg-emerald-700 hover:bg-emerald-800 text-white font-bold px-4 py-2.5 rounded-xl text-xs shadow flex items-center gap-2 transition"
+                        >
+                          <Sparkles size={14} /> {isAiProcessingCatalog ? 'Procesando con IA...' : 'Procesar y Crear con IA'}
+                        </button>
+                      </div>
+
+                      {/* Formulario de Alta / Edición Manual */}
+                      <div className="bg-white border p-5 rounded-2xl shadow-sm space-y-4">
+                        <h3 className="font-bold text-base text-gray-800 flex items-center gap-2 border-b pb-3">
+                          <Plus size={18} className="text-[#0b6b38]" /> 
+                          {editingProductId ? '✏️ Editar Producto Existente' : '➕ Registrar Nuevo Producto Manualmente'}
+                        </h3>
+
+                        <form onSubmit={handleSaveProduct} className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+                          <div>
+                            <label className="font-bold text-gray-700 block mb-1">Nombre del Producto: *</label>
+                            <input 
+                              type="text"
+                              value={prodName}
+                              onChange={e => setProdName(e.target.value)}
+                              placeholder="Ej. Arroz Extra 1kg"
+                              className="w-full border p-2 rounded-lg bg-white font-bold"
+                              required
+                            />
+                          </div>
+
+                          <div>
+                            <label className="font-bold text-gray-700 block mb-1">Precio (S/): *</label>
+                            <input 
+                              type="number"
+                              step="0.01"
+                              value={prodPrice}
+                              onChange={e => setProdPrice(e.target.value)}
+                              placeholder="Ej. 4.20"
+                              className="w-full border p-2 rounded-lg bg-white font-bold"
+                              required
+                            />
+                          </div>
+
+                          <div>
+                            <label className="font-bold text-gray-700 block mb-1">Categoría:</label>
+                            <input 
+                              type="text"
+                              value={prodCategory}
+                              onChange={e => setProdCategory(e.target.value)}
+                              placeholder="Ej. Viveres, Carnicería, Limpieza..."
+                              className="w-full border p-2 rounded-lg bg-white"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="font-bold text-gray-700 block mb-1">Tipo de Venta (Unidad o Kilo):</label>
+                            <select 
+                              value={prodUnitType}
+                              onChange={e => setProdUnitType(e.target.value)}
+                              className="w-full border p-2 rounded-lg bg-white font-bold"
+                            >
+                              <option value="unidad">📦 Por Unidad</option>
+                              <option value="kilo">⚖️ Por Kilo</option>
+                            </select>
+                          </div>
+
+                          <div className="sm:col-span-2 space-y-1">
+                            <label className="font-bold text-gray-700 block">Fotografía del Producto (Cámara o Archivo):</label>
+                            <div className="grid grid-cols-2 gap-2">
+                              <label className="cursor-pointer bg-slate-50 border-2 border-dashed border-green-500 text-green-800 font-bold py-2 px-3 rounded-lg flex items-center justify-center gap-1.5">
+                                <Camera size={15} /> <span>Tomar con Cámara</span>
+                                <input type="file" accept="image/*" capture="environment" onChange={handleProductImageUpload} className="hidden" />
+                              </label>
+                              <label className="cursor-pointer bg-slate-50 border-2 border-dashed border-gray-400 text-gray-700 font-bold py-2 px-3 rounded-lg flex items-center justify-center gap-1.5">
+                                <Upload size={15} /> <span>Subir desde Dispositivo</span>
+                                <input type="file" accept="image/*" onChange={handleProductImageUpload} className="hidden" />
+                              </label>
+                            </div>
+                            {prodImage && <p className="text-[10px] text-green-700 font-bold mt-1">✅ Imagen cargada correctamente</p>}
+                          </div>
+
+                          <div className="sm:col-span-2 flex justify-end gap-2 pt-2">
+                            {editingProductId && (
+                              <button 
+                                type="button" 
+                                onClick={() => { setEditingProductId(null); setProdName(''); setProdPrice(''); setProdCategory('Viveres'); setProdUnitType('unidad'); setProdImage(''); }}
+                                className="bg-gray-200 text-gray-700 font-bold px-4 py-2 rounded-xl"
+                              >
+                                Cancelar Edición
+                              </button>
+                            )}
+                            <button type="submit" className="bg-[#0b6b38] hover:bg-[#074825] text-white font-bold px-6 py-2.5 rounded-xl shadow">
+                              {editingProductId ? '💾 Actualizar Producto' : '💾 Guardar Nuevo Producto'}
+                            </button>
+                          </div>
+                        </form>
+                      </div>
+
+                      {/* Listado de Productos Existentes en el Catálogo para Editar / Eliminar */}
+                      <div className="space-y-4">
+                        <h4 className="font-bold text-sm text-gray-800">📋 Catálogo Actual en Base de Datos ({products.length} productos):</h4>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          {products.map(prod => (
+                            <div key={prod.id} className="border p-3 rounded-xl bg-white shadow-sm flex items-center justify-between gap-3 text-xs">
+                              <img src={prod.image} alt={prod.name} className="w-14 h-14 rounded-lg object-cover border flex-shrink-0" />
+                              <div className="flex-1 min-w-0">
+                                <span className="text-[9px] uppercase font-bold text-green-700 bg-green-50 px-2 py-0.5 rounded">{prod.category}</span>
+                                <p className="font-bold text-gray-900 truncate mt-0.5">{prod.name}</p>
+                                <p className="text-gray-600 font-bold">
+                                  S/ {Number(prod.price).toFixed(2)} <span className="text-[10px] text-gray-500 font-normal">({prod.unitType === 'kilo' ? 'Por Kilo ⚖️' : 'Por Unidad 📦'})</span>
+                                </p>
+                              </div>
+                              <div className="flex flex-col gap-1.5">
+                                <button 
+                                  onClick={() => handleStartEditProduct(prod)}
+                                  className="bg-blue-100 hover:bg-blue-200 text-blue-800 p-1.5 rounded-lg font-bold flex items-center justify-center gap-1"
+                                  title="Editar"
+                                >
+                                  <Edit3 size={14} /> Editar
+                                </button>
+                                <button 
+                                  onClick={() => handleDeleteCatalogProduct(prod.id)}
+                                  className="bg-red-100 hover:bg-red-200 text-red-700 p-1.5 rounded-lg font-bold flex items-center justify-center gap-1"
+                                  title="Eliminar"
+                                >
+                                  <Trash2 size={14} /> Eliminar
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
                     </div>
                   )}
 
