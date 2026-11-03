@@ -268,7 +268,7 @@ export default function App() {
         setUserRole(assignedRole);
         setIsVipClient(vipStatus);
 
-        if (assignedRole === 'chofer' || assignedRole === 'cajera' || assignedRole === 'encargado' || assignedRole === 'contabilidad') {
+        if (assignedRole === 'chofer' || assignedRole === 'cajera' || assignedRole === 'encargado' || assignedRole === 'contabilidad' || assignedRole === 'supervisor') {
           setView('admin');
           setAdminSubTab('orders');
         }
@@ -1027,7 +1027,7 @@ export default function App() {
       <header className="bg-[#0b6b38] text-white shadow-lg sticky top-0 z-50">
         <div className="max-w-6xl mx-auto px-4 py-3 flex justify-between items-center">
           <div className="flex items-center gap-2 cursor-pointer" onClick={() => {
-            if (isChofer || isCajera || isEncargado || isContabilidad) {
+            if (isChofer || isCajera || isEncargado || isContabilidad || isSupervisor) {
               setView('admin');
               setAdminSubTab('orders');
             } else {
@@ -1508,6 +1508,7 @@ export default function App() {
                     </h2>
                     
                     <div className="flex items-center gap-2">
+                      {/* SOLO ADMIN TIENE ACCESO AL BOTÓN DE RESTAURAR FÁBRICA */}
                       {isAdmin && (
                         <button 
                           onClick={handleResetToFactorySettings}
@@ -1521,7 +1522,7 @@ export default function App() {
                       <div className="flex bg-gray-100 p-1 rounded-xl text-xs font-bold gap-1 flex-wrap">
                         <button onClick={() => setAdminSubTab('orders')} className={`px-3 py-2 rounded-lg ${adminSubTab === 'orders' ? 'bg-[#0b6b38] text-white shadow' : 'text-gray-600'}`}>📦 Pedidos</button>
                         
-                        {(isAdmin || isContabilidad) && (
+                        {(isAdmin || isContabilidad || isSupervisor) && (
                           <button onClick={() => setAdminSubTab('refunds')} className={`px-3 py-2 rounded-lg relative ${adminSubTab === 'refunds' ? 'bg-purple-700 text-white shadow' : 'text-gray-600'}`}>
                             🔄 Devoluciones
                             {refundDebtOrders.length > 0 && (
@@ -1532,23 +1533,25 @@ export default function App() {
                           </button>
                         )}
 
-                        {(isAdmin || isContabilidad) && (
+                        {(isAdmin || isContabilidad || isSupervisor) && (
                           <button onClick={() => setAdminSubTab('corrupt')} className={`px-3 py-2 rounded-lg ${adminSubTab === 'corrupt' ? 'bg-red-600 text-white shadow' : 'text-gray-600'}`}>
                             🚫 Corruptos ({corruptOrdersList.length})
                           </button>
                         )}
 
-                        {(isAdmin || isContabilidad) && (
+                        {(isAdmin || isContabilidad || isSupervisor) && (
                           <button onClick={() => setAdminSubTab('accounting')} className={`px-3 py-2 rounded-lg ${adminSubTab === 'accounting' ? 'bg-[#0b6b38] text-white shadow' : 'text-gray-600'}`}>
                             📊 Contabilidad
                           </button>
                         )}
 
+                        {(isAdmin || isSupervisor) && (
+                          <button onClick={() => setAdminSubTab('paymethods')} className={`px-3 py-2 rounded-lg ${adminSubTab === 'paymethods' ? 'bg-cyan-700 text-white shadow' : 'text-gray-600'}`}>💳 Métodos de Pago y QR</button>
+                        )}
+
+                        {/* SOLO ADMIN TIENE ACCESO A LA PESTAÑA PERSONAL (PRIVILEGIOS Y ROLES) */}
                         {isAdmin && (
-                          <>
-                            <button onClick={() => setAdminSubTab('paymethods')} className={`px-3 py-2 rounded-lg ${adminSubTab === 'paymethods' ? 'bg-cyan-700 text-white shadow' : 'text-gray-600'}`}>💳 Métodos de Pago y QR</button>
-                            <button onClick={() => setAdminSubTab('users')} className={`px-3 py-2 rounded-lg ${adminSubTab === 'users' ? 'bg-[#0b6b38] text-white shadow' : 'text-gray-600'}`}>👥 Personal</button>
-                          </>
+                          <button onClick={() => setAdminSubTab('users')} className={`px-3 py-2 rounded-lg ${adminSubTab === 'users' ? 'bg-[#0b6b38] text-white shadow' : 'text-gray-600'}`}>👥 Personal</button>
                         )}
                       </div>
                     </div>
@@ -1688,8 +1691,8 @@ export default function App() {
                                   <Printer size={14} /> Imprimir
                                 </button>
 
-                                {/* BOTONES DE CAMBIO DE ESTADO (SOLO CHOFER Y ADMIN) */}
-                                {(isChofer || isAdmin) && (
+                                {/* BOTONES DE CAMBIO DE ESTADO (CHOFER, SUPERVISOR Y ADMIN) */}
+                                {(isChofer || isSupervisor || isAdmin) && (
                                   <>
                                     <button onClick={() => handleUpdateOrderStatus(order.id, 'Alistado')} className="bg-purple-600 text-white p-2 rounded-lg text-xs font-bold flex items-center gap-1">
                                       <PackageCheck size={14} /> Alistado
@@ -1721,8 +1724,8 @@ export default function App() {
                                 </div>
 
                                 <div className="flex flex-wrap items-center gap-2">
-                                  {/* ACCIONES EXCLUSIVAS DEL CHOFER */}
-                                  {isChofer && (
+                                  {/* ACCIONES DEL CHOFER */}
+                                  {(isChofer || isSupervisor) && (
                                     <>
                                       <button 
                                         onClick={() => {
@@ -1747,8 +1750,8 @@ export default function App() {
                                     </>
                                   )}
 
-                                  {/* ACCIONES DE CONTABILIDAD */}
-                                  {(isContabilidad || isAdmin) && (
+                                  {/* ACCIONES DE CAJERA, CONTABILIDAD, SUPERVISOR Y ADMIN */}
+                                  {(isCajera || isContabilidad || isSupervisor || isAdmin) && (
                                     <>
                                       <button 
                                         onClick={() => {
@@ -1761,26 +1764,6 @@ export default function App() {
                                         }`}
                                       >
                                         <CreditCard size={14} /> {order.isPaid ? '✅ Pagado' : '💵 Registrar Pago'}
-                                      </button>
-
-                                      <button 
-                                        onClick={() => {
-                                          setCorruptOrderId(order.id);
-                                          setCorruptModalOpen(true);
-                                        }}
-                                        className="bg-red-600 hover:bg-red-700 text-white font-bold px-3 py-2 rounded-xl text-xs flex items-center gap-1 shadow"
-                                      >
-                                        <ShieldAlert size={14} /> Pago Corrupto / Bloquear
-                                      </button>
-
-                                      <button 
-                                        onClick={() => {
-                                          setProductReturnOrderId(order.id);
-                                          setProductReturnModalOpen(true);
-                                        }}
-                                        className="bg-amber-600 hover:bg-amber-700 text-white font-bold px-3 py-2 rounded-xl text-xs flex items-center gap-1 shadow"
-                                      >
-                                        <ReturnIcon size={14} /> Dev. Producto
                                       </button>
 
                                       <button 
@@ -1828,7 +1811,34 @@ export default function App() {
                                     </>
                                   )}
 
-                                  {/* ACCIONES ADICIONALES SOLO PARA ADMIN */}
+                                  {/* ACCIONES DE PAGO CORRUPTO Y DEVOLUCIÓN DE PRODUCTOS PARA CONTABILIDAD, SUPERVISOR Y ADMIN */}
+                                  {(isContabilidad || isSupervisor || isAdmin) && (
+                                    <>
+                                      <button 
+                                        onClick={() => {
+                                          setCorruptOrderId(order.id);
+                                          setCorruptModalOpen(true);
+                                        }}
+                                        className="bg-red-600 hover:bg-red-700 text-white font-bold px-3 py-2 rounded-xl text-xs flex items-center gap-1 shadow"
+                                      >
+                                        <ShieldAlert size={14} /> Pago Corrupto / Bloquear
+                                      </button>
+
+                                      {!isChofer && (
+                                        <button 
+                                          onClick={() => {
+                                            setProductReturnOrderId(order.id);
+                                            setProductReturnModalOpen(true);
+                                          }}
+                                          className="bg-amber-600 hover:bg-amber-700 text-white font-bold px-3 py-2 rounded-xl text-xs flex items-center gap-1 shadow"
+                                        >
+                                          <ReturnIcon size={14} /> Dev. Producto
+                                        </button>
+                                      )}
+                                    </>
+                                  )}
+
+                                  {/* ACCIONES ADICIONALES PARA ADMIN */}
                                   {isAdmin && (
                                     <button 
                                       onClick={() => {
@@ -1851,7 +1861,7 @@ export default function App() {
                     </div>
                   )}
 
-                  {adminSubTab === 'paymethods' && isAdmin && (
+                  {adminSubTab === 'paymethods' && (isAdmin || isSupervisor) && (
                     <div className="space-y-6">
                       <div className="bg-cyan-50 border border-cyan-200 p-5 rounded-2xl space-y-4">
                         <h3 className="font-bold text-base text-cyan-900 flex items-center gap-2">
@@ -1926,7 +1936,7 @@ export default function App() {
                     </div>
                   )}
 
-                  {adminSubTab === 'refunds' && (isAdmin || isContabilidad) && (
+                  {adminSubTab === 'refunds' && (isAdmin || isContabilidad || isSupervisor) && (
                     <div className="space-y-4">
                       <h3 className="font-bold text-base text-purple-800 flex items-center gap-2">
                         <RefreshCw size={20} /> Gestión de Devolución de Dinero a Clientes
@@ -2075,10 +2085,10 @@ export default function App() {
                                   <ul className="text-gray-700 space-y-1">
                                     {currentRole === 'admin' && <li>• Acceso total a todas las funciones, contabilidad y ajustes.</li>}
                                     {currentRole === 'encargado' && <li>• Visualización de lista de productos pedidos e impresión de comprobantes.</li>}
-                                    {currentRole === 'cajera' && <li>• Subir factura, imprimir, registro de vuelto base y vuelto recibido del chofer.</li>}
+                                    {currentRole === 'cajera' && <li>• Registrar pago, subir factura, monto definitivo, vuelto base y vuelto recibido.</li>}
                                     {currentRole === 'chofer' && <li>• Cambio de estado de entregas, registro de vuelto entregado y devoluciones.</li>}
                                     {currentRole === 'contabilidad' && <li>• Registrar pago, pago corrupto, devoluciones, facturas, monto definitivo, vuelto base y vuelto recibido del repartidor.</li>}
-                                    {currentRole === 'supervisor' && <li>• Supervisión de entregas, logística y estado de pedidos.</li>}
+                                    {currentRole === 'supervisor' && <li>• Supervisión integral de pedidos, estados, cobros, vueltos, devoluciones y métodos de pago.</li>}
                                     {currentRole === 'client' && <li>• Visualización de catálogo, generación de pedidos y seguimiento personal.</li>}
                                   </ul>
                                 </div>
@@ -2090,7 +2100,7 @@ export default function App() {
                     </div>
                   )}
 
-                  {adminSubTab === 'corrupt' && (isAdmin || isContabilidad) && (
+                  {adminSubTab === 'corrupt' && (isAdmin || isContabilidad || isSupervisor) && (
                     <div className="space-y-4">
                       <h3 className="font-bold text-base text-red-700 flex items-center gap-2">
                         <ShieldAlert size={20} /> Clientes con Pagos Corruptos y Bloqueados
@@ -2130,7 +2140,7 @@ export default function App() {
                     </div>
                   )}
 
-                  {adminSubTab === 'accounting' && (isAdmin || isContabilidad) && (
+                  {adminSubTab === 'accounting' && (isAdmin || isContabilidad || isSupervisor) && (
                     <div className="space-y-6">
                       <div className="bg-green-50 border p-5 rounded-2xl flex justify-between items-center">
                         <div>
@@ -2420,7 +2430,7 @@ export default function App() {
 
             {refundModalOpen && (
               <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-                <div className="bg-white p-6 rounded-2xl max-w-md w-full shadow-2xl space-y-4">
+                <div className="bg-[#ffffff] p-6 rounded-2xl max-w-md w-full shadow-2xl space-y-4">
                   <h3 className="font-bold text-base text-purple-700 flex items-center gap-2">
                     <Banknote size={20} /> Realizar y Subir Reembolso al Cliente
                   </h3>
