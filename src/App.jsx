@@ -80,6 +80,7 @@ export default function App() {
   const [deliveryDate, setDeliveryDate] = useState('');
   const [deliveryTime, setDeliveryTime] = useState('');
   const [clientPhone, setClientPhone] = useState('');
+  const [exactAddress, setExactAddress] = useState('');
   const [paymentPreference, setPaymentPreference] = useState('Efectivo');
   const [paymentTiming, setPaymentTiming] = useState('Contra Entrega');
   const [creditTerm, setCreditTerm] = useState('7 dias');
@@ -470,6 +471,7 @@ export default function App() {
       clientName: user.name,
       clientEmail: user.email,
       clientPhone: clientPhone,
+      exactAddress: exactAddress || '',
       items: cart,
       approxTotal: cartTotal,
       total: cartTotal,
@@ -947,6 +949,7 @@ export default function App() {
         <body style="font-family: Arial; padding: 20px; font-size: 12px;">
           <h2>PUNTO M - RUC 20123456789</h2>
           <p><strong>Cliente:</strong> ${orderToPrint.clientName} (${orderToPrint.clientPhone || 'Sin teléfono'})</p>
+          <p><strong>Dirección:</strong> ${orderToPrint.exactAddress || 'No especificada'}</p>
           <p><strong>Método de Pago:</strong> ${orderToPrint.paymentPreference} (${orderToPrint.paymentTiming})</p>
           <p><strong>Estado de Pago:</strong> ${orderToPrint.isPaid ? 'Pagado' : 'Pendiente'}</p>
           <table><tbody>${itemsHtml}</tbody></table>
@@ -1309,9 +1312,27 @@ export default function App() {
                       )}
                     </div>
 
-                    <button onClick={handleGetLocation} disabled={locationLoading} className="w-full bg-blue-50 border border-blue-200 text-blue-700 py-2 rounded-lg text-xs flex items-center justify-center gap-2">
-                      <MapPin size={15} /> {clientLocation ? '✅ Ubicación obtenida' : 'Compartir Ubicación'}
-                    </button>
+                    {/* SECCIÓN DE UBICACIÓN DUAL (GPS + DIRECCIÓN EXACTA) */}
+                    <div className="bg-slate-50 p-3 rounded-lg border border-slate-200 text-xs space-y-2">
+                      <p className="font-bold text-gray-800 flex items-center gap-1">
+                        <MapPin size={15} className="text-[#0b6b38]" /> Ubicación de Entrega:
+                      </p>
+
+                      <button onClick={handleGetLocation} disabled={locationLoading} className="w-full bg-blue-50 border border-blue-300 text-blue-700 py-2 rounded-lg text-xs font-bold flex items-center justify-center gap-2 hover:bg-blue-100 transition">
+                        <MapPin size={15} /> {clientLocation ? '✅ GPS Obtenido con Éxito' : '📍 Compartir Ubicación GPS'}
+                      </button>
+
+                      <div>
+                        <label className="text-[10px] font-bold text-gray-600 mb-1 block">✍️ Colocar ubicación de entrega exacta / Referencia:</label>
+                        <textarea 
+                          rows="2"
+                          value={exactAddress} 
+                          onChange={e => setExactAddress(e.target.value)} 
+                          placeholder="Ej. Calle 5 con Av. 10, Casa #45, frente a la panadería..." 
+                          className="w-full border p-2 rounded text-xs bg-white"
+                        />
+                      </div>
+                    </div>
 
                     <div className="flex justify-between font-black text-sm text-gray-800">
                       <span>Total aproximado por compra:</span>
@@ -1434,6 +1455,7 @@ export default function App() {
                   <div className="inline-block bg-[#0b6b38] px-4 py-1 rounded text-white font-black text-xl mb-1">PUNTO M</div>
                   <p className="text-xs text-gray-500">Tel: {companyHeader.phone}</p>
                   <p className="text-xs font-bold text-[#0b6b38] mt-2">Cliente: {user?.name} | Telf: {clientPhone}</p>
+                  {exactAddress && <p className="text-xs text-gray-700 font-bold mt-1">📍 Dirección Exacta: {exactAddress}</p>}
                   <p className="text-xs text-amber-700 font-medium mt-1">⚠️ Este es un cálculo aproximado. El monto definitivo se confirmará tras la facturación.</p>
                 </div>
 
@@ -1457,6 +1479,7 @@ export default function App() {
                       `🛒 *NUEVO PEDIDO - PUNTO M*\n` +
                       `👤 *Cliente:* ${user ? user.name : 'Cliente'}\n` +
                       `📞 *Teléfono:* ${clientPhone}\n` +
+                      (exactAddress ? `📍 *Dirección Exacta:* ${exactAddress}\n` : '') +
                       `💳 *Método de Pago:* ${paymentPreference} ${paymentPreference === 'Crédito' ? `(${creditTerm})` : ''}\n` +
                       (paymentPreference === 'Efectivo' ? `🪙 *Paga con:* S/ ${cashPayAmount || cartTotal}\n` : '') +
                       `📅 *Entrega:* ${deliveryDate} a las ${deliveryTime}\n` +
@@ -1508,7 +1531,6 @@ export default function App() {
                     </h2>
                     
                     <div className="flex items-center gap-2">
-                      {/* SOLO ADMIN TIENE ACCESO AL BOTÓN DE RESTAURAR FÁBRICA */}
                       {isAdmin && (
                         <button 
                           onClick={handleResetToFactorySettings}
@@ -1549,7 +1571,6 @@ export default function App() {
                           <button onClick={() => setAdminSubTab('paymethods')} className={`px-3 py-2 rounded-lg ${adminSubTab === 'paymethods' ? 'bg-cyan-700 text-white shadow' : 'text-gray-600'}`}>💳 Métodos de Pago y QR</button>
                         )}
 
-                        {/* SOLO ADMIN TIENE ACCESO A LA PESTAÑA PERSONAL (PRIVILEGIOS Y ROLES) */}
                         {isAdmin && (
                           <button onClick={() => setAdminSubTab('users')} className={`px-3 py-2 rounded-lg ${adminSubTab === 'users' ? 'bg-[#0b6b38] text-white shadow' : 'text-gray-600'}`}>👥 Personal</button>
                         )}
@@ -1592,10 +1613,16 @@ export default function App() {
                                   </p>
                                   {order.location && (
                                     <a href={order.location.mapUrl} target="_blank" rel="noreferrer" className="text-blue-600 font-bold underline flex items-center gap-1">
-                                      <MapPin size={14} /> Ver Ubicación GPS
+                                      <MapPin size={14} /> Ver GPS
                                     </a>
                                   )}
                                 </div>
+
+                                {order.exactAddress && (
+                                  <p className="text-gray-800 font-bold bg-amber-50 p-1.5 rounded border border-amber-200">
+                                    📍 Entrega Exacta: {order.exactAddress}
+                                  </p>
+                                )}
 
                                 <p className="text-gray-500">Pago: <strong>{order.paymentPreference}</strong> {order.creditTerm ? `(${order.creditTerm})` : ''}</p>
                                 
@@ -1691,7 +1718,7 @@ export default function App() {
                                   <Printer size={14} /> Imprimir
                                 </button>
 
-                                {/* BOTONES DE CAMBIO DE ESTADO (CHOFER, SUPERVISOR Y ADMIN) */}
+                                {/* BOTONES DE CAMBIO DE ESTADO */}
                                 {(isChofer || isSupervisor || isAdmin) && (
                                   <>
                                     <button onClick={() => handleUpdateOrderStatus(order.id, 'Alistado')} className="bg-purple-600 text-white p-2 rounded-lg text-xs font-bold flex items-center gap-1">
@@ -1724,7 +1751,6 @@ export default function App() {
                                 </div>
 
                                 <div className="flex flex-wrap items-center gap-2">
-                                  {/* ACCIONES DEL CHOFER */}
                                   {(isChofer || isSupervisor) && (
                                     <>
                                       <button 
@@ -1750,7 +1776,6 @@ export default function App() {
                                     </>
                                   )}
 
-                                  {/* ACCIONES DE CAJERA, CONTABILIDAD, SUPERVISOR Y ADMIN */}
                                   {(isCajera || isContabilidad || isSupervisor || isAdmin) && (
                                     <>
                                       <button 
@@ -1811,7 +1836,6 @@ export default function App() {
                                     </>
                                   )}
 
-                                  {/* ACCIONES DE PAGO CORRUPTO Y DEVOLUCIÓN DE PRODUCTOS PARA CONTABILIDAD, SUPERVISOR Y ADMIN */}
                                   {(isContabilidad || isSupervisor || isAdmin) && (
                                     <>
                                       <button 
@@ -1838,7 +1862,6 @@ export default function App() {
                                     </>
                                   )}
 
-                                  {/* ACCIONES ADICIONALES PARA ADMIN */}
                                   {isAdmin && (
                                     <button 
                                       onClick={() => {
