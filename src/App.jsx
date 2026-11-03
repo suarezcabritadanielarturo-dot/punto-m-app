@@ -18,7 +18,9 @@ import {
   Clock,
   CreditCard,
   History,
-  Image as ImageIcon
+  Image as ImageIcon,
+  Calendar,
+  AlertTriangle
 } from 'lucide-react';
 import { auth, googleProvider, db, signInWithPopup, signOut } from './firebase';
 import { 
@@ -50,6 +52,15 @@ export default function App() {
   const [orders, setOrders] = useState([]);
   const [selectedClientFilter, setSelectedClientFilter] = useState('all');
   
+  // Preferencia de Fecha y Hora de Entrega por el cliente
+  const [deliveryDate, setDeliveryDate] = useState('');
+  const [deliveryTime, setDeliveryTime] = useState('');
+
+  // Modal para motivo de "No se pudo entregar"
+  const [failModalOpen, setFailModalOpen] = useState(false);
+  const [failOrderId, setFailOrderId] = useState(null);
+  const [failReason, setFailReason] = useState('');
+
   const [companyHeader] = useState({
     name: 'PUNTO M',
     rif: 'RUC 20123456789',
@@ -87,13 +98,21 @@ export default function App() {
       console.log("Modo offline o usando catálogo base:", error);
     });
 
-    // Escuchar pedidos en Firestore (con datos históricos)
+    // Escuchar pedidos en Firestore ordenados por llegada y hora de entrega preferida
     const unsubscribeOrders = onSnapshot(collection(db, 'orders'), (snapshot) => {
       const dbOrders = snapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
       }));
-      dbOrders.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+      
+      // Ordenamiento inteligente: orden de llegada + hora de entrega preferida
+      dbOrders.sort((a, b) => {
+        const timeA = `${a.deliveryDate || ''} ${a.deliveryTime || ''}`;
+        const timeB = `${b.deliveryDate || ''} ${b.deliveryTime || ''}`;
+        if (timeA !== timeB) return timeA.localeCompare(timeB);
+        return (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0);
+      });
+
       setOrders(dbOrders);
     }, (error) => {
       console.log("Error leyendo pedidos:", error);
@@ -200,7 +219,7 @@ export default function App() {
     );
   };
 
-  // Crear pedido con Validación de Sesión Obligatoria
+  // Crear pedido con Validación de Sesión y Hora de Entrega
   const handleGenerateReceipt = async () => {
     if (!user) {
       alert("⚠️ Debe iniciar sesión obligatoriamente antes de realizar un pedido.");
@@ -217,7 +236,10 @@ export default function App() {
       items: cart,
       total: cartTotal,
       location: clientLocation || null,
+      deliveryDate: deliveryDate || 'Lo antes posible',
+      deliveryTime: deliveryTime || 'Horario abierto',
       status: 'Pendiente',
+      failReason: '',
       createdAt: new Date()
     };
 
@@ -230,7 +252,7 @@ export default function App() {
     }
   };
 
-  // Carga de imagen desde el computador (Base64)
+  // Carga de imagen desde el computador
   const handleImageFileUpload = (e) => {
     const file = e.target.files[0];
     if (file) {
@@ -242,7 +264,7 @@ export default function App() {
     }
   };
 
-  // Asistente IA para Clientes con Validación de Sesión
+  // Asistente IA Clientes
   const handleClientAiOrder = async () => {
     if (!user) {
       alert("⚠️ Debes iniciar sesión con Google para usar el Asistente de Pedidos.");
@@ -372,14 +394,28 @@ export default function App() {
     }
   };
 
-  // Cambiar estado de un pedido (Pendiente -> Pagado -> Completado/Entregado)
-  const handleUpdateOrderStatus = async (orderId, newStatus) => {
+  // Cambiar estado de pedido
+  const handleUpdateOrderStatus = async (orderId, newStatus, reason = '') => {
     try {
       const orderRef = doc(db, 'orders', orderId);
-      await updateDoc(orderRef, { status: newStatus });
+      const updateData = { status: newStatus };
+      if (reason) updateData.failReason = reason;
+      await updateDoc(orderRef, updateData);
     } catch (err) {
       console.error("Error actualizando estado del pedido:", err);
     }
+  };
+
+  // Guardar motivo de fallo de entrega
+  const handleSaveFailReason = async () => {
+    if (!failReason.trim()) {
+      alert("Por favor escribe el motivo por el cual no se pudo entregar.");
+      return;
+    }
+    await handleUpdateOrderStatus(failOrderId, 'No se pudo entregar', failReason);
+    setFailModalOpen(false);
+    setFailOrderId(null);
+    setFailReason('');
   };
 
   // Imprimir Pedido desde Admin
@@ -396,6 +432,10 @@ export default function App() {
     const locationHtml = orderToPrint.location 
       ? `<p><strong>Ubicación GPS:</strong> <a href="${orderToPrint.location.mapUrl}">${orderToPrint.location.mapUrl}</a></p>`
       : '<p><strong>Ubicación GPS:</strong> No compartida</p>';
+
+    const failReasonHtml = orderToPrint.failReason 
+      ? `<p style="color: red;"><strong>Motivo de no entrega:</strong> ${orderToPrint.failReason}</p>`
+      : '';
 
     printWindow.document.write(`
       <html>
@@ -416,7 +456,9 @@ export default function App() {
           </div>
           <p><strong>Cliente:</strong> ${orderToPrint.clientName}</p>
           <p><strong>Email:</strong> ${orderToPrint.clientEmail || 'N/A'}</p>
+          <p><strong>Fecha/Hora Entrega Preferida:</strong> ${orderToPrint.deliveryDate || 'N/A'} - ${orderToPrint.deliveryTime || 'N/A'}</p>
           <p><strong>Estado Actual:</strong> ${orderToPrint.status}</p>
+          ${failReasonHtml}
           ${locationHtml}
           <table>
             <thead>
@@ -442,7 +484,6 @@ export default function App() {
     printWindow.document.close();
   };
 
-  // Obtener lista única de clientes para el filtro del historial
   const uniqueClients = Array.from(new Set(orders.map(o => o.clientEmail || o.clientName))).filter(Boolean);
 
   const filteredOrders = selectedClientFilter === 'all' 
@@ -512,13 +553,13 @@ export default function App() {
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div className="lg:col-span-2 space-y-6">
               
-              {/* ASISTENTE DE PEDIDOS POR IA */}
+              {/* ASISTENTE IA */}
               <div className="bg-white p-4 rounded-xl shadow-sm border border-green-200">
                 <h3 className="font-bold text-sm text-green-900 mb-1 flex items-center gap-2">
                   <Sparkles size={16} className="text-[#0b6b38]" /> Asistente de Pedidos IA
                 </h3>
                 <p className="text-xs text-gray-600 mb-2">
-                  Escribe lo que necesitas (ej: "Quiero 2 kilos de arroz y un jabón") y la IA agregará lo disponible al carrito.
+                  Escribe lo que necesitas y la IA agregará lo disponible al carrito.
                 </p>
                 <div className="flex gap-2">
                   <input 
@@ -587,7 +628,7 @@ export default function App() {
                   El carrito está vacío.
                 </div>
               ) : (
-                <div className="space-y-3 flex-1 overflow-y-auto max-h-[300px] pr-1">
+                <div className="space-y-3 flex-1 overflow-y-auto max-h-[250px] pr-1">
                   {cart.map(item => (
                     <div key={item.id} className="flex justify-between items-center p-2 rounded-lg bg-gray-50 border">
                       <div className="text-xs">
@@ -605,8 +646,29 @@ export default function App() {
                 </div>
               )}
 
-              <div className="mt-4 pt-3 border-t">
-                <div className="mb-3">
+              <div className="mt-4 pt-3 border-t space-y-3">
+                {/* SELECTOR DE FECHA Y HORA DE ENTREGA */}
+                <div className="bg-gray-50 p-2.5 rounded-lg border text-xs space-y-2">
+                  <p className="font-bold text-gray-700 flex items-center gap-1">
+                    <Calendar size={14} className="text-[#0b6b38]" /> Fecha y hora preferida de entrega:
+                  </p>
+                  <div className="grid grid-cols-2 gap-2">
+                    <input 
+                      type="date"
+                      value={deliveryDate}
+                      onChange={e => setDeliveryDate(e.target.value)}
+                      className="border p-1 rounded text-xs bg-white"
+                    />
+                    <input 
+                      type="time"
+                      value={deliveryTime}
+                      onChange={e => setDeliveryTime(e.target.value)}
+                      className="border p-1 rounded text-xs bg-white"
+                    />
+                  </div>
+                </div>
+
+                <div>
                   <button 
                     onClick={handleGetLocation}
                     disabled={locationLoading}
@@ -626,7 +688,7 @@ export default function App() {
                   )}
                 </div>
 
-                <div className="flex justify-between font-black text-sm text-gray-800 mb-4">
+                <div className="flex justify-between font-black text-sm text-gray-800">
                   <span>Total aproximado a pagar:</span>
                   <span className="text-[#0b6b38] text-base">S/ {cartTotal.toFixed(2)}</span>
                 </div>
@@ -654,6 +716,7 @@ export default function App() {
               <p className="text-xs text-gray-500">{companyHeader.address}</p>
               <p className="text-xs text-gray-500">Tel: {companyHeader.phone}</p>
               <p className="text-xs font-bold text-[#0b6b38] mt-2">Cliente: {user?.name}</p>
+              <p className="text-xs text-gray-600 mt-1">Entrega preferida: <strong>{deliveryDate || 'Lo antes posible'}</strong> a las <strong>{deliveryTime || 'Horario abierto'}</strong></p>
             </div>
 
             <table className="w-full text-xs mb-4">
@@ -692,10 +755,11 @@ export default function App() {
                 href={`https://wa.me/584245719928?text=${encodeURIComponent(
                   `🛒 *NUEVO PEDIDO - PUNTO M*\n` +
                   `👤 *Cliente:* ${user ? user.name : 'Cliente'}\n` +
+                  `📅 *Fecha/Hora Preferida:* ${deliveryDate || 'Lo antes posible'} - ${deliveryTime || 'Horario abierto'}\n` +
                   `-----------------------------------\n` +
                   `📋 *Detalle del Pedido:*\n` + cart.map(item => `• ${item.qty}x ${item.name} - S/ ${(item.price * item.qty).toFixed(2)}`).join('\n') + `\n` +
                   `-----------------------------------\n` +
-                  `💰 *Total aproximado a pagar:* S/ ${cartTotal.toFixed(2)}\n` +
+                  `💰 *Total aproximado a pagar:* S/ {cartTotal.toFixed(2)}\n` +
                   (clientLocation ? `📍 *Ubicación del Cliente:*\n${clientLocation.mapUrl}` : '📍 *Ubicación:* No compartida')
                 )}`}
                 target="_blank"
@@ -714,7 +778,7 @@ export default function App() {
           </div>
         )}
 
-        {/* PANEL ADMIN AVANZADO */}
+        {/* PANEL ADMIN */}
         {view === 'admin' && userRole === 'admin' && (
           <div className="space-y-6 max-w-5xl mx-auto">
             <div className="bg-white p-6 rounded-2xl shadow border">
@@ -722,14 +786,13 @@ export default function App() {
                 <Settings className="text-[#0b6b38]" /> Panel de Administración PUNTO M
               </h2>
 
-              {/* HISTORIAL Y GESTIÓN DE PEDIDOS POR CLIENTE */}
+              {/* GESTIÓN DE PEDIDOS E HISTORIAL */}
               <div className="mb-8">
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-3">
                   <h3 className="font-bold text-base text-gray-800 flex items-center gap-2">
-                    <History size={18} className="text-[#0b6b38]" /> Historial de Pedidos y Gestión
+                    <History size={18} className="text-[#0b6b38]" /> Historial de Pedidos y Gestión (Ordenados por Llegada / Hora)
                   </h3>
                   
-                  {/* FILTRO POR CLIENTE */}
                   <div className="flex items-center gap-2">
                     <span className="text-xs font-bold text-gray-600">Filtrar por Cliente:</span>
                     <select 
@@ -764,8 +827,18 @@ export default function App() {
                             </span>
                           </div>
                           <p className="text-gray-500">Email: {order.clientEmail || 'No disponible'}</p>
-                          <p className="text-gray-700 font-medium">Items: {order.items ? order.items.map(i => `${i.qty}x ${i.name}`).join(', ') : 'Sin detalle'}</p>
+                          <p className="text-gray-700 font-bold flex items-center gap-1">
+                            <Calendar size={12} className="text-[#0b6b38]" /> Entrega: {order.deliveryDate || 'N/A'} a las {order.deliveryTime || 'N/A'}
+                          </p>
+                          <p className="text-gray-600 font-medium">Items: {order.items ? order.items.map(i => `${i.qty}x ${i.name}`).join(', ') : 'Sin detalle'}</p>
                           <p className="font-bold text-green-800 text-xs">Total aprox: S/ {Number(order.total).toFixed(2)}</p>
+                          
+                          {order.failReason && (
+                            <p className="text-red-600 font-bold bg-red-50 p-1.5 rounded border border-red-200 mt-1">
+                              ⚠️ Motivo no entrega: {order.failReason}
+                            </p>
+                          )}
+
                           {order.location && (
                             <p className="text-blue-600 flex items-center gap-1 text-[11px]">
                               <MapPin size={12} />
@@ -796,18 +869,31 @@ export default function App() {
                             </button>
                           )}
 
-                          {/* BOTÓN: COMPLETAR / ENTREGADO (DISPONIBLE AL ESTAR PAGADO) */}
+                          {/* BOTONES DISPONIBLES AL ESTAR PAGADO */}
                           {order.status === 'Pagado' && (
-                            <button 
-                              onClick={() => handleUpdateOrderStatus(order.id, 'Entregado')}
-                              className="bg-green-600 hover:bg-green-700 text-white p-2 rounded-lg text-xs font-bold flex items-center gap-1"
-                              title="Marcar como Entregado / Completado"
-                            >
-                              <CheckCircle size={14} /> Completar (Entregado)
-                            </button>
+                            <>
+                              <button 
+                                onClick={() => handleUpdateOrderStatus(order.id, 'Entregado')}
+                                className="bg-green-600 hover:bg-green-700 text-white p-2 rounded-lg text-xs font-bold flex items-center gap-1"
+                                title="Marcar como Completado / Entregado"
+                              >
+                                <CheckCircle size={14} /> Completar (Entregado)
+                              </button>
+
+                              <button 
+                                onClick={() => {
+                                  setFailOrderId(order.id);
+                                  setFailModalOpen(true);
+                                }}
+                                className="bg-amber-600 hover:bg-amber-700 text-white p-2 rounded-lg text-xs font-bold flex items-center gap-1"
+                                title="No se pudo entregar"
+                              >
+                                <AlertTriangle size={14} /> No se pudo entregar
+                              </button>
+                            </>
                           )}
 
-                          {order.status !== 'Entregado' && order.status !== 'Cancelado' && (
+                          {order.status !== 'Entregado' && order.status !== 'Cancelado' && order.status !== 'No se pudo entregar' && (
                             <button 
                               onClick={() => handleUpdateOrderStatus(order.id, 'Cancelado')}
                               className="bg-red-500 hover:bg-red-600 text-white p-2 rounded-lg text-xs font-bold flex items-center gap-1"
@@ -823,7 +909,7 @@ export default function App() {
                 )}
               </div>
 
-              {/* IMPORTADOR DE INVENTARIO GEMINI IA */}
+              {/* IMPORTADOR GEMINI */}
               <div className="bg-green-50 p-5 rounded-xl border border-green-200 mb-6">
                 <h3 className="font-bold text-sm text-green-900 mb-2 flex items-center gap-2">
                   <Sparkles size={18} className="text-[#0b6b38]" /> Importador Inteligente Gemini IA
@@ -857,7 +943,7 @@ Azúcar Rubia 1kg - 3.80 S/"
                 )}
               </div>
 
-              {/* REGISTRO MANUAL CON CARGA DESDE COMPUTADOR */}
+              {/* REGISTRO MANUAL */}
               <div className="border-t pt-4">
                 <h3 className="font-bold text-sm text-gray-700 mb-3">Agregar Producto Manual</h3>
                 <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 mb-3">
@@ -901,7 +987,6 @@ Azúcar Rubia 1kg - 3.80 S/"
                   </button>
                 </div>
 
-                {/* BOTÓN PARA CARGAR DESDE LA COMPUTADORA */}
                 <div className="flex items-center gap-2">
                   <label className="cursor-pointer bg-gray-200 hover:bg-gray-300 text-gray-800 text-xs font-bold py-1.5 px-3 rounded inline-flex items-center gap-1 transition">
                     <ImageIcon size={14} />
@@ -914,6 +999,45 @@ Azúcar Rubia 1kg - 3.80 S/"
                 </div>
               </div>
 
+            </div>
+          </div>
+        )}
+
+        {/* MODAL PARA MOTIVO DE NO ENTREGA */}
+        {failModalOpen && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white p-6 rounded-2xl max-w-md w-full shadow-2xl space-y-4">
+              <h3 className="font-bold text-base text-red-600 flex items-center gap-2">
+                <AlertTriangle size={20} /> Explicación de No Entrega
+              </h3>
+              <p className="text-xs text-gray-600">
+                Por favor, escribe el motivo por el cual no se pudo completar la entrega de este pedido:
+              </p>
+              <textarea 
+                rows="3"
+                value={failReason}
+                onChange={e => setFailReason(e.target.value)}
+                placeholder="Ej. Cliente ausente, dirección incorrecta, zona inaccesible..."
+                className="w-full border p-3 rounded-lg text-xs focus:ring-2 focus:ring-red-500"
+              ></textarea>
+              <div className="flex justify-end gap-2 pt-2">
+                <button 
+                  onClick={() => {
+                    setFailModalOpen(false);
+                    setFailReason('');
+                    setFailOrderId(null);
+                  }}
+                  className="bg-gray-200 hover:bg-gray-300 text-gray-700 font-bold px-4 py-2 rounded-lg text-xs"
+                >
+                  Cancelar
+                </button>
+                <button 
+                  onClick={handleSaveFailReason}
+                  className="bg-red-600 hover:bg-red-700 text-white font-bold px-4 py-2 rounded-lg text-xs shadow"
+                >
+                  Guardar Motivo
+                </button>
+              </div>
             </div>
           </div>
         )}
