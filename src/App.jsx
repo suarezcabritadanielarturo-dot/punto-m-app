@@ -112,12 +112,19 @@ export default function App() {
   const [manualProductValue, setManualProductValue] = useState('');
   const [returnedProductsPhoto, setReturnedProductsPhoto] = useState('');
 
+  // Estados para Vuelto Entregado al Repartidor (Base)
+  const [baseChangeModalOpen, setBaseChangeModalOpen] = useState(false);
+  const [baseChangeOrderId, setBaseChangeOrderId] = useState(null);
+  const [baseChangeAmount, setBaseChangeAmount] = useState('');
+  const [baseChangeProofPhoto, setBaseChangeProofPhoto] = useState('');
+
+  // Estados para Vuelto que el Repartidor Entregó (Real al cliente)
   const [changeModalOpen, setChangeModalOpen] = useState(false);
   const [changeOrderId, setChangeOrderId] = useState(null);
   const [changeAmountGiven, setChangeAmountGiven] = useState('');
   const [changeProofPhoto, setChangeProofPhoto] = useState('');
 
-  // Estados para Devolución Digital / Reembolso al Cliente en Admin
+  // Estados para Devolución / Reembolso al Cliente
   const [refundModalOpen, setRefundModalOpen] = useState(false);
   const [refundOrderId, setRefundOrderId] = useState(null);
   const [refundAmount, setRefundAmount] = useState('');
@@ -412,8 +419,9 @@ export default function App() {
       corruptPhoto: '',
       returnedProductsList: [],
       returnedProductsPhoto: '',
-      changeGivenRecord: null,
-      refundRecord: null, // Registro de devolución digital al cliente
+      baseChangeRecord: null, // Vuelto entregado al repartidor
+      changeGivenRecord: null, // Vuelto que el repartidor entregó
+      refundRecord: null, // Reembolso / devolución de dinero al cliente
       failReason: '',
       returnStatus: 'No aplica',
       returnProof: '',
@@ -471,6 +479,15 @@ export default function App() {
     if (file) {
       const reader = new FileReader();
       reader.onloadend = () => setReturnedProductsPhoto(reader.result);
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleBaseChangeProofUpload = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => setBaseChangeProofPhoto(reader.result);
       reader.readAsDataURL(file);
     }
   };
@@ -641,6 +658,32 @@ export default function App() {
     }
   };
 
+  const handleSaveBaseChange = async () => {
+    const val = parseFloat(baseChangeAmount);
+    if (isNaN(val) || val < 0) {
+      alert("⚠️ Ingrese un monto de vuelto base válido.");
+      return;
+    }
+
+    try {
+      const orderRef = doc(db, 'orders', baseChangeOrderId);
+      await updateDoc(orderRef, {
+        baseChangeRecord: {
+          amount: val,
+          photo: baseChangeProofPhoto || '',
+          date: new Date().toISOString()
+        }
+      });
+      setBaseChangeModalOpen(false);
+      setBaseChangeOrderId(null);
+      setBaseChangeAmount('');
+      setBaseChangeProofPhoto('');
+      alert("✅ ¡Vuelto entregado al repartidor registrado con éxito!");
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
   const handleSaveChangeGiven = async () => {
     const changeVal = parseFloat(changeAmountGiven);
     if (isNaN(changeVal) || changeVal < 0) {
@@ -662,14 +705,12 @@ export default function App() {
       setChangeOrderId(null);
       setChangeAmountGiven('');
       setChangeProofPhoto('');
-      alert("✅ ¡Registro de vuelto real guardado con éxito!");
+      alert("✅ ¡Vuelto que el repartidor entregó registrado con éxito!");
     } catch (err) {
       console.error(err);
-      alert("Error al guardar el vuelto.");
     }
   };
 
-  // GUARDAR CASO DE DEVOLUCIÓN DE DINERO (REEMBOLSO DIGITAL)
   const handleSaveRefundRecord = async () => {
     const refVal = parseFloat(refundAmount);
     if (isNaN(refVal) || refVal <= 0) {
@@ -695,10 +736,9 @@ export default function App() {
       setRefundOrderId(null);
       setRefundAmount('');
       setRefundProofPhoto('');
-      alert("✅ ¡Caso de devolución de dinero registrado y publicado para el cliente!");
+      alert("✅ ¡Reembolso registrado y publicado con éxito!");
     } catch (err) {
       console.error(err);
-      alert("Error al registrar la devolución.");
     }
   };
 
@@ -727,12 +767,11 @@ export default function App() {
       alert("🚫 Cliente bloqueado por Pago Corrupto registrado.");
     } catch (err) {
       console.error(err);
-      alert("Error al registrar el pago corrupto.");
     }
   };
 
   const handleUnlockAndPayCorrupt = async (orderId) => {
-    const confirmUnlock = window.confirm("🔓 ¿Deseas desbloquear a este cliente y registrar su pago como correcto? Esto devolverá el caso al historial normal.");
+    const confirmUnlock = window.confirm("🔓 ¿Deseas desbloquear a este cliente y registrar su pago como correcto?");
     if (!confirmUnlock) return;
 
     try {
@@ -745,7 +784,6 @@ export default function App() {
       alert("✅ ¡Cliente desbloqueado y pago registrado correctamente!");
     } catch (err) {
       console.error(err);
-      alert("Error al desbloquear.");
     }
   };
 
@@ -823,8 +861,17 @@ export default function App() {
   const uniqueClients = Array.from(new Set(orders.map(o => o.clientEmail || o.clientName))).filter(Boolean);
   const filteredOrders = selectedClientFilter === 'all' ? orders.filter(o => !o.isCorrupt) : orders.filter(o => !o.isCorrupt && (o.clientEmail === selectedClientFilter || o.clientName === selectedClientFilter));
   const corruptOrdersList = orders.filter(o => o.isCorrupt === true);
-  const myOrders = user ? orders.filter(o => o.clientUid === user.uid || o.clientEmail === user.email) : [];
   
+  // Órdenes donde se le debe dinero al cliente (o hubo devolución de productos con saldo a favor tras pago digital/tarjeta)
+  const refundDebtOrders = orders.filter(o => {
+    const finalTot = Number(o.total || o.approxTotal || 0);
+    const origTot = Number(o.originalTotal || o.approxTotal || 0);
+    const hasProductReturn = (o.returnedProductsList?.length || 0) > 0;
+    const isDigitalOrCard = o.paymentPreference === 'Pago Digital' || o.paymentPreference === 'Tarjeta' || o.isPaid;
+    return (hasProductReturn && origTot > finalTot && isDigitalOrCard && !o.refundRecord);
+  });
+
+  const myOrders = user ? orders.filter(o => o.clientUid === user.uid || o.clientEmail === user.email) : [];
   const clientBlockedOrder = myOrders.find(o => o.isCorrupt === true);
 
   const nowTime = new Date().getTime();
@@ -1137,7 +1184,6 @@ export default function App() {
               </div>
             )}
 
-            {/* SEGUIMIENTO DEL CLIENTE CON PESTAÑA DE CASO DE DEVOLUCIÓN DE DINERO */}
             {view === 'tracking' && (
               <div className="max-w-3xl mx-auto space-y-6">
                 <div className="bg-white p-6 rounded-2xl shadow border">
@@ -1200,24 +1246,21 @@ export default function App() {
                               </div>
                             )}
 
-                            {/* PESTAÑA / SECCIÓN: CASO DE DEVOLUCIÓN DE DINERO */}
                             {order.refundRecord && (
                               <div className="bg-purple-50 border-2 border-purple-300 p-4 rounded-2xl text-xs space-y-2">
                                 <p className="font-black text-purple-900 flex items-center gap-1.5 text-sm">
-                                  <Banknote size={18} className="text-purple-700" /> Caso de Devolución de Dinero / Reembolso
+                                  <Banknote size={18} className="text-purple-700" /> Devolución de Dinero / Reembolso Realizado
                                 </p>
                                 <p className="text-purple-800">
                                   Monto devuelto: <strong>S/ {Number(order.refundRecord.amount).toFixed(2)}</strong>
                                 </p>
-                                {order.refundRecord.photo ? (
+                                {order.refundRecord.photo && (
                                   <div className="flex items-center justify-between bg-white p-2.5 rounded-xl border border-purple-200">
-                                    <span className="font-bold text-gray-700">Comprobante de Transferencia Emitido:</span>
+                                    <span className="font-bold text-gray-700">Comprobante de Transferencia:</span>
                                     <button onClick={() => setPreviewImage(order.refundRecord.photo)} className="bg-purple-600 text-white font-bold px-3 py-1.5 rounded-lg text-xs flex items-center gap-1 shadow">
                                       <Eye size={14} /> Ver Comprobante
                                     </button>
                                   </div>
-                                ) : (
-                                  <p className="text-amber-700 font-medium">⏳ Su devolución está en proceso de transferencia.</p>
                                 )}
                               </div>
                             )}
@@ -1329,6 +1372,14 @@ export default function App() {
 
                       <div className="flex bg-gray-100 p-1 rounded-xl text-xs font-bold gap-1 flex-wrap">
                         <button onClick={() => setAdminSubTab('orders')} className={`px-3 py-2 rounded-lg ${adminSubTab === 'orders' ? 'bg-[#0b6b38] text-white shadow' : 'text-gray-600'}`}>📦 Pedidos</button>
+                        <button onClick={() => setAdminSubTab('refunds')} className={`px-3 py-2 rounded-lg relative ${adminSubTab === 'refunds' ? 'bg-purple-700 text-white shadow' : 'text-gray-600'}`}>
+                          🔄 Devolución de Dinero
+                          {refundDebtOrders.length > 0 && (
+                            <span className="absolute -top-1 -right-1 bg-red-600 text-white text-[10px] w-4 h-4 rounded-full flex items-center justify-center font-black">
+                              {refundDebtOrders.length}
+                            </span>
+                          )}
+                        </button>
                         <button onClick={() => setAdminSubTab('users')} className={`px-3 py-2 rounded-lg ${adminSubTab === 'users' ? 'bg-[#0b6b38] text-white shadow' : 'text-gray-600'}`}>👥 Usuarios</button>
                         <button onClick={() => setAdminSubTab('corrupt')} className={`px-3 py-2 rounded-lg ${adminSubTab === 'corrupt' ? 'bg-red-600 text-white shadow' : 'text-gray-600'}`}>🚫 Pagos Corruptos ({corruptOrdersList.length})</button>
                         <button onClick={() => setAdminSubTab('accounting')} className={`px-3 py-2 rounded-lg ${adminSubTab === 'accounting' ? 'bg-[#0b6b38] text-white shadow' : 'text-gray-600'}`}>📊 Contabilidad</button>
@@ -1341,9 +1392,14 @@ export default function App() {
                     <div className="space-y-4">
                       {filteredOrders.map(order => {
                         const finalTotal = Number(order.total || order.approxTotal || 0);
+                        const baseChange = Number(order.baseChangeRecord?.amount || 0);
                         const actualChangeGiven = Number(order.changeGivenRecord?.amount || 0);
-                        const cashCollected = order.paymentPreference === 'Efectivo' ? Number(order.cashPayAmount || finalTotal) : 0;
-                        const returnToStore = order.paymentPreference === 'Efectivo' ? Math.max(0, cashCollected - actualChangeGiven) : 0;
+                        const isCash = order.paymentPreference === 'Efectivo';
+                        const cashCollected = isCash ? Number(order.cashPayAmount || finalTotal) : 0;
+                        
+                        // Cálculo exacto que debe entregar el repartidor a la tienda:
+                        // Si es efectivo: (Efectivo cobrado + Vuelto base entregado al repartidor) menos (Vuelto real entregado al cliente).
+                        const totalToStore = isCash ? Math.max(0, cashCollected + baseChange - actualChangeGiven) : 0;
 
                         return (
                           <div key={order.id} className="border p-4 rounded-xl bg-white shadow-sm flex flex-col justify-between gap-4">
@@ -1374,29 +1430,38 @@ export default function App() {
 
                                 <p className="text-gray-500">Pago: <strong>{order.paymentPreference}</strong> {order.creditTerm ? `(${order.creditTerm})` : ''}</p>
                                 
-                                {order.paymentPreference === 'Efectivo' && (
+                                {isCash ? (
                                   <div className="bg-blue-50 p-2.5 rounded-lg border border-blue-200 space-y-1 mt-1">
-                                    <p className="text-blue-900 font-bold">
-                                      🪙 Cliente paga con: S/ {cashCollected.toFixed(2)}
+                                    <p className="text-blue-900 font-bold">🪙 Efectivo cobrado al cliente: S/ {cashCollected.toFixed(2)}</p>
+                                    <p className="text-teal-900 font-bold">
+                                      • Vuelto entregado al repartidor (Base): <strong>S/ {baseChange.toFixed(2)}</strong>
+                                      {order.baseChangeRecord?.photo && (
+                                        <button onClick={() => setPreviewImage(order.baseChangeRecord.photo)} className="ml-2 text-teal-700 underline font-normal inline-flex items-center gap-0.5">
+                                          <Eye size={12} /> Ver foto [Foto del Vuelto/Dinero]
+                                        </button>
+                                      )}
                                     </p>
-                                    <p className="text-teal-900 font-black">
-                                      • Vuelto real entregado: <strong>S/ {actualChangeGiven.toFixed(2)}</strong>
+                                    <p className="text-indigo-900 font-bold">
+                                      • Vuelto que el repartidor entregó: <strong>S/ {actualChangeGiven.toFixed(2)}</strong>
+                                      {order.changeGivenRecord?.photo && (
+                                        <button onClick={() => setPreviewImage(order.changeGivenRecord.photo)} className="ml-2 text-indigo-700 underline font-normal inline-flex items-center gap-0.5">
+                                          <Eye size={12} /> Ver foto [Foto del Vuelto Entregado]
+                                        </button>
+                                      )}
                                     </p>
                                     <p className="text-green-900 font-black pt-1 border-t border-blue-200">
-                                      💵 Total efectivo a devolver por el repartidor a la tienda: <strong>S/ {returnToStore.toFixed(2)}</strong>
+                                      💵 Total que debe entregar el repartidor a la tienda: <strong>S/ {totalToStore.toFixed(2)}</strong>
                                     </p>
                                   </div>
-                                )}
-
-                                {order.refundRecord && (
+                                ) : (
                                   <div className="bg-purple-50 p-2.5 rounded-lg border border-purple-200 space-y-1 mt-1">
-                                    <p className="text-purple-900 font-bold">
-                                      🔄 Reembolso Digital Registrado: S/ {Number(order.refundRecord.amount).toFixed(2)}
-                                    </p>
-                                    {order.refundRecord.photo && (
-                                      <button onClick={() => setPreviewImage(order.refundRecord.photo)} className="text-xs text-purple-700 underline font-bold flex items-center gap-1">
-                                        <Eye size={12} /> Ver comprobante de reembolso transferido
+                                    <p className="text-purple-900 font-bold">📱 Fue Pago Digital / Tarjeta</p>
+                                    {order.cashPhoto ? (
+                                      <button onClick={() => setPreviewImage(order.cashPhoto)} className="text-xs text-purple-700 underline font-bold flex items-center gap-1">
+                                        <Eye size={12} /> Ver foto [Foto del Pago Digital]
                                       </button>
+                                    ) : (
+                                      <p className="text-gray-500 text-[10px]">Sin comprobante digital adjunto.</p>
                                     )}
                                   </div>
                                 )}
@@ -1404,8 +1469,16 @@ export default function App() {
                                 <p className="text-gray-600 mt-1">Items: {order.items?.map(i => `${i.qty}x ${i.name}`).join(', ')}</p>
                                 
                                 {order.returnedProductsList?.length > 0 && (
-                                  <div className="text-amber-700 font-semibold">
-                                    🔄 Productos devueltos: {order.returnedProductsList.map(r => `${r.summary} (-S/${r.deduction})`).join(', ')}
+                                  <div className="bg-amber-50 p-2 rounded border border-amber-200 space-y-1 mt-1">
+                                    <p className="text-amber-800 font-bold">🔄 Productos Devueltos:</p>
+                                    {order.returnedProductsList.map((r, idx) => (
+                                      <p key={idx} className="text-gray-700">• {r.summary} (-S/ {r.deduction})</p>
+                                    ))}
+                                    {order.returnedProductsPhoto && (
+                                      <button onClick={() => setPreviewImage(order.returnedProductsPhoto)} className="text-xs text-amber-700 underline font-bold flex items-center gap-1 mt-1">
+                                        <Eye size={12} /> Ver foto [Foto del Producto Devuelto]
+                                      </button>
+                                    )}
                                   </div>
                                 )}
 
@@ -1446,11 +1519,10 @@ export default function App() {
                             <div className="bg-gray-50 p-3 rounded-xl border flex flex-col sm:flex-row justify-between items-center gap-3">
                               <div className="text-xs">
                                 <p className="font-bold text-gray-700">Gestión Administrativa:</p>
-                                <p className="text-gray-500">Factura, montos, vuelto real, devolución de productos o reembolso digital.</p>
+                                <p className="text-gray-500">Factura, montos, vueltos, devoluciones y pagos.</p>
                               </div>
 
                               <div className="flex flex-wrap items-center gap-2">
-                                {/* BOTÓN PARA SUBIR FACTURA */}
                                 <button 
                                   onClick={() => {
                                     setInvoiceOrderId(order.id);
@@ -1461,7 +1533,6 @@ export default function App() {
                                   <Receipt size={14} /> {order.invoicePhoto ? '🔄 Cambiar Factura' : '📄 Subir Factura'}
                                 </button>
 
-                                {/* BOTÓN PARA INGRESAR TOTAL A PAGAR EXACTO */}
                                 <button 
                                   onClick={() => {
                                     setFinalAmountOrderId(order.id);
@@ -1488,25 +1559,24 @@ export default function App() {
 
                                 <button 
                                   onClick={() => {
+                                    setBaseChangeOrderId(order.id);
+                                    setBaseChangeAmount(order.baseChangeRecord?.amount || '');
+                                    setBaseChangeModalOpen(true);
+                                  }}
+                                  className="bg-cyan-600 hover:bg-cyan-700 text-white font-bold px-3 py-2 rounded-xl text-xs flex items-center gap-1 shadow"
+                                >
+                                  <Banknote size={14} /> Vuelto al Repartidor
+                                </button>
+
+                                <button 
+                                  onClick={() => {
                                     setChangeOrderId(order.id);
                                     setChangeAmountGiven(order.changeGivenRecord?.amount || '');
                                     setChangeModalOpen(true);
                                   }}
                                   className="bg-teal-600 hover:bg-teal-700 text-white font-bold px-3 py-2 rounded-xl text-xs flex items-center gap-1 shadow"
                                 >
-                                  <Banknote size={14} /> Vuelto Real
-                                </button>
-
-                                {/* BOTÓN PARA REGISTRAR REEMBOLSO DIGITAL (CASO DE DEVOLUCIÓN DE DINERO) */}
-                                <button 
-                                  onClick={() => {
-                                    setRefundOrderId(order.id);
-                                    setRefundAmount('');
-                                    setRefundModalOpen(true);
-                                  }}
-                                  className="bg-purple-600 hover:bg-purple-700 text-white font-bold px-3 py-2 rounded-xl text-xs flex items-center gap-1 shadow"
-                                >
-                                  <RefreshCw size={14} /> Devolución Dinero
+                                  <Banknote size={14} /> Vuelto Entregado
                                 </button>
 
                                 <button 
@@ -1534,6 +1604,76 @@ export default function App() {
                           </div>
                         );
                       })}
+                    </div>
+                  )}
+
+                  {/* PESTAÑA EXCLUSIVA: DEVOLUCIÓN DE DINERO (CASOS DONDE QUEDAMOS DEBIENDO) */}
+                  {adminSubTab === 'refunds' && (
+                    <div className="space-y-4">
+                      <h3 className="font-bold text-base text-purple-800 flex items-center gap-2">
+                        <RefreshCw size={20} /> Gestión de Devolución de Dinero a Clientes
+                      </h3>
+                      <p className="text-xs text-gray-600">Aquí se muestran los pedidos donde hubo devolución de productos y el cliente pagó de forma digital o tarjeta, por lo que le quedamos debiendo dinero.</p>
+
+                      {refundDebtOrders.length === 0 ? (
+                        <div className="text-center py-12 text-gray-400 text-sm">No hay casos pendientes de devolución de dinero.</div>
+                      ) : (
+                        refundDebtOrders.map(order => {
+                          const orig = Number(order.originalTotal || order.approxTotal || 0);
+                          const current = Number(order.total || 0);
+                          const debtAmount = orig - current;
+
+                          return (
+                            <div key={order.id} className="border border-purple-300 p-4 rounded-xl bg-purple-50 space-y-3 text-xs">
+                              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b pb-2 gap-2">
+                                <div>
+                                  <p className="font-bold text-sm text-purple-900">{order.clientName} (Telf: {order.clientPhone})</p>
+                                  <p className="text-purple-700 font-bold">Monto a devolver al cliente: S/ {debtAmount.toFixed(2)}</p>
+                                </div>
+                                <button 
+                                  onClick={() => {
+                                    setRefundOrderId(order.id);
+                                    setRefundAmount(debtAmount.toFixed(2));
+                                    setRefundModalOpen(true);
+                                  }}
+                                  className="bg-purple-600 hover:bg-purple-700 text-white font-bold px-4 py-2 rounded-xl text-xs shadow"
+                                >
+                                  💳 Realizar y Subir Reembolso
+                                </button>
+                              </div>
+
+                              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                                <div className="bg-white p-2.5 rounded-lg border">
+                                  <p className="font-bold text-gray-700 mb-1">📦 [Foto del Producto Devuelto]</p>
+                                  {order.returnedProductsPhoto ? (
+                                    <button onClick={() => setPreviewImage(order.returnedProductsPhoto)} className="text-blue-600 underline font-bold flex items-center gap-1">
+                                      <Eye size={12} /> Ver foto
+                                    </button>
+                                  ) : <span className="text-gray-400">Sin foto</span>}
+                                </div>
+
+                                <div className="bg-white p-2.5 rounded-lg border">
+                                  <p className="font-bold text-gray-700 mb-1">📄 [Factura Asociada]</p>
+                                  {order.invoicePhoto ? (
+                                    <button onClick={() => setPreviewImage(order.invoicePhoto)} className="text-blue-600 underline font-bold flex items-center gap-1">
+                                      <Eye size={12} /> Ver factura
+                                    </button>
+                                  ) : <span className="text-gray-400">Sin factura</span>}
+                                </div>
+
+                                <div className="bg-white p-2.5 rounded-lg border">
+                                  <p className="font-bold text-gray-700 mb-1">💵 [Comprobante de Reembolso]</p>
+                                  {order.refundRecord?.photo ? (
+                                    <button onClick={() => setPreviewImage(order.refundRecord.photo)} className="text-purple-600 underline font-bold flex items-center gap-1">
+                                      <Eye size={12} /> Ver comprobante pagado
+                                    </button>
+                                  ) : <span className="text-amber-600 font-bold">Pendiente de pago</span>}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })
+                      )}
                     </div>
                   )}
 
@@ -1622,7 +1762,7 @@ export default function App() {
                               <p className="text-gray-600">Total a Pagar Actualizado: S/ {Number(order.total || order.approxTotal).toFixed(2)}</p>
                               {order.corruptPhoto && (
                                 <button onClick={() => setPreviewImage(order.corruptPhoto)} className="text-blue-700 font-bold underline flex items-center gap-1 cursor-pointer">
-                                  <Eye size={14} /> Ver Comprobante/Efectivo con Incidencia
+                                  <Eye size={14} /> Ver Comprobante/Efectivo con Incidencia [Foto del Dinero]
                                 </button>
                               )}
                               {order.invoicePhoto && (
@@ -1688,14 +1828,80 @@ export default function App() {
               </div>
             )}
 
-            {/* MODAL PARA REGISTRAR REEMBOLSO / CASO DE DEVOLUCIÓN DE DINERO */}
+            {/* MODALES PARA VUELTOS Y REEMBOLSOS */}
+            {baseChangeModalOpen && (
+              <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+                <div className="bg-white p-6 rounded-2xl max-w-md w-full shadow-2xl space-y-4">
+                  <h3 className="font-bold text-base text-cyan-700 flex items-center gap-2">
+                    <Banknote size={20} /> Vuelto Entregado al Repartidor (Base)
+                  </h3>
+                  <p className="text-xs text-gray-600">Ingrese el monto de dinero base que se le entregó al repartidor para dar cambio y adjunte la foto correspondiente:</p>
+
+                  <input 
+                    type="number"
+                    step="0.01"
+                    value={baseChangeAmount}
+                    onChange={e => setBaseChangeAmount(e.target.value)}
+                    placeholder="Ej. 20.00"
+                    className="w-full border p-2.5 rounded-lg text-sm font-bold text-cyan-900"
+                  />
+
+                  <div className="space-y-1 bg-cyan-50 p-3 rounded-xl border border-cyan-200 text-xs">
+                    <p className="font-bold text-cyan-900 flex items-center gap-1"><Camera size={14} /> Foto del Vuelto / Dinero Base: *</p>
+                    <label className="cursor-pointer bg-white border-2 border-dashed border-cyan-400 text-gray-800 font-bold py-2 px-2 rounded-lg flex items-center justify-center gap-1">
+                      <Upload size={14} /> <span>{baseChangeProofPhoto ? '✅ Foto cargada' : 'Seleccionar foto'}</span>
+                      <input type="file" accept="image/*" onChange={handleBaseChangeProofUpload} className="hidden" />
+                    </label>
+                  </div>
+
+                  <div className="flex justify-end gap-2 pt-2">
+                    <button onClick={() => { setBaseChangeModalOpen(false); setBaseChangeOrderId(null); setBaseChangeAmount(''); setBaseChangeProofPhoto(''); }} className="bg-gray-200 text-gray-700 font-bold px-4 py-2 rounded-lg text-xs">Cancelar</button>
+                    <button onClick={handleSaveBaseChange} className="bg-cyan-600 hover:bg-cyan-700 text-white font-bold px-4 py-2 rounded-lg text-xs shadow">Guardar Vuelto Base</button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {changeModalOpen && (
+              <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+                <div className="bg-white p-6 rounded-2xl max-w-md w-full shadow-2xl space-y-4">
+                  <h3 className="font-bold text-base text-teal-700 flex items-center gap-2">
+                    <Banknote size={20} /> Vuelto que el Repartidor Entregó (Real)
+                  </h3>
+                  <p className="text-xs text-gray-600">Ingrese el monto exacto de dinero que el repartidor entregó de vuelto al cliente y adjunte su foto o comprobante:</p>
+
+                  <input 
+                    type="number"
+                    step="0.01"
+                    value={changeAmountGiven}
+                    onChange={e => setChangeAmountGiven(e.target.value)}
+                    placeholder="Ej. 5.00"
+                    className="w-full border p-2.5 rounded-lg text-sm font-bold text-teal-900"
+                  />
+
+                  <div className="space-y-1 bg-teal-50 p-3 rounded-xl border border-teal-200 text-xs">
+                    <p className="font-bold text-teal-900 flex items-center gap-1"><Camera size={14} /> Foto del Vuelto Entregado: *</p>
+                    <label className="cursor-pointer bg-white border-2 border-dashed border-teal-400 text-gray-800 font-bold py-2 px-2 rounded-lg flex items-center justify-center gap-1">
+                      <Upload size={14} /> <span>{changeProofPhoto ? '✅ Foto cargada' : 'Seleccionar foto'}</span>
+                      <input type="file" accept="image/*" onChange={handleChangeProofPhotoUpload} className="hidden" />
+                    </label>
+                  </div>
+
+                  <div className="flex justify-end gap-2 pt-2">
+                    <button onClick={() => { setChangeModalOpen(false); setChangeOrderId(null); setChangeAmountGiven(''); setChangeProofPhoto(''); }} className="bg-gray-200 text-gray-700 font-bold px-4 py-2 rounded-lg text-xs">Cancelar</button>
+                    <button onClick={handleSaveChangeGiven} className="bg-teal-600 hover:bg-teal-700 text-white font-bold px-4 py-2 rounded-lg text-xs shadow">Guardar Vuelto Entregado</button>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {refundModalOpen && (
               <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
                 <div className="bg-white p-6 rounded-2xl max-w-md w-full shadow-2xl space-y-4">
                   <h3 className="font-bold text-base text-purple-700 flex items-center gap-2">
-                    <RefreshCw size={20} /> Registrar Devolución de Dinero (Reembolso)
+                    <RefreshCw size={20} /> Registrar Devolución de Dinero al Cliente
                   </h3>
-                  <p className="text-xs text-gray-600">Ingrese el monto exacto a reembolsar por transferencia/pago digital y adjunte el comprobante de pago para que aparezca en el seguimiento del cliente:</p>
+                  <p className="text-xs text-gray-600">Ingrese el monto del reembolso por transferencia y adjunte el comprobante de pago:</p>
 
                   <input 
                     type="number"
@@ -1717,39 +1923,6 @@ export default function App() {
                   <div className="flex justify-end gap-2 pt-2">
                     <button onClick={() => { setRefundModalOpen(false); setRefundOrderId(null); setRefundAmount(''); setRefundProofPhoto(''); }} className="bg-gray-200 text-gray-700 font-bold px-4 py-2 rounded-lg text-xs">Cancelar</button>
                     <button onClick={handleSaveRefundRecord} className="bg-purple-600 hover:bg-purple-700 text-white font-bold px-4 py-2 rounded-lg text-xs shadow">Guardar y Publicar</button>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {changeModalOpen && (
-              <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-                <div className="bg-white p-6 rounded-2xl max-w-md w-full shadow-2xl space-y-4">
-                  <h3 className="font-bold text-base text-teal-700 flex items-center gap-2">
-                    <Banknote size={20} /> Ingresar Vuelto Real Entregado
-                  </h3>
-                  <p className="text-xs text-gray-600">Ingrese el monto exacto de dinero que el repartidor entregó como vuelto al cliente y adjunte su evidencia:</p>
-
-                  <input 
-                    type="number"
-                    step="0.01"
-                    value={changeAmountGiven}
-                    onChange={e => setChangeAmountGiven(e.target.value)}
-                    placeholder="Ej. 5.00"
-                    className="w-full border p-2.5 rounded-lg text-sm font-bold text-teal-900"
-                  />
-
-                  <div className="space-y-1 bg-teal-50 p-3 rounded-xl border border-teal-200 text-xs">
-                    <p className="font-bold text-teal-900 flex items-center gap-1"><Camera size={14} /> Foto de Comprobante / Vuelto:</p>
-                    <label className="cursor-pointer bg-white border-2 border-dashed border-teal-400 text-gray-800 font-bold py-2 px-2 rounded-lg flex items-center justify-center gap-1">
-                      <Upload size={14} /> <span>{changeProofPhoto ? '✅ Foto cargada' : 'Seleccionar foto'}</span>
-                      <input type="file" accept="image/*" onChange={handleChangeProofPhotoUpload} className="hidden" />
-                    </label>
-                  </div>
-
-                  <div className="flex justify-end gap-2 pt-2">
-                    <button onClick={() => { setChangeModalOpen(false); setChangeOrderId(null); setChangeAmountGiven(''); setChangeProofPhoto(''); }} className="bg-gray-200 text-gray-700 font-bold px-4 py-2 rounded-lg text-xs">Cancelar</button>
-                    <button onClick={handleSaveChangeGiven} className="bg-teal-600 hover:bg-teal-700 text-white font-bold px-4 py-2 rounded-lg text-xs shadow">Guardar Vuelto Real</button>
                   </div>
                 </div>
               </div>
@@ -1781,7 +1954,7 @@ export default function App() {
                   />
 
                   <div className="space-y-1 bg-amber-50 p-3 rounded-xl border border-amber-200 text-xs">
-                    <p className="font-bold text-amber-900 flex items-center gap-1"><Camera size={14} /> Foto de los productos devueltos: *</p>
+                    <p className="font-bold text-amber-900 flex items-center gap-1"><Camera size={14} /> [Foto del Producto Devuelto]: *</p>
                     <label className="cursor-pointer bg-white border-2 border-dashed border-amber-400 text-gray-800 font-bold py-2 px-2 rounded-lg flex items-center justify-center gap-1">
                       <Upload size={14} /> <span>{returnedProductsPhoto ? '✅ Foto cargada' : 'Seleccionar foto'}</span>
                       <input type="file" accept="image/*" onChange={handleReturnedProductsPhotoUpload} className="hidden" />
@@ -1802,27 +1975,17 @@ export default function App() {
                   <h3 className="font-bold text-base text-red-700 flex items-center gap-2">
                     <ShieldAlert size={20} /> Registrar Pago Corrupto / Incidencia
                   </h3>
-                  <p className="text-xs text-gray-600">Especifique el motivo por el cual el pago es corrupto o inválido y suba la foto correspondiente:</p>
-
-                  <textarea 
-                    rows="3" 
-                    value={corruptReason} 
-                    onChange={e => setCorruptReason(e.target.value)} 
-                    placeholder="Ej. Billete falso, transferencia no reportada, comprobante adulterado..." 
-                    className="w-full border p-2.5 rounded-lg text-xs"
-                  ></textarea>
-
+                  <textarea rows="3" value={corruptReason} onChange={e => setCorruptReason(e.target.value)} placeholder="Motivo..." className="w-full border p-2.5 rounded-lg text-xs"></textarea>
                   <div className="space-y-1 bg-red-50 p-3 rounded-xl border border-red-200 text-xs">
-                    <p className="font-bold text-red-900 flex items-center gap-1"><Camera size={14} /> Subir Foto del Pago / Efectivo Corrupto: *</p>
+                    <p className="font-bold text-red-900 flex items-center gap-1"><Camera size={14} /> [Foto del Dinero / Pago Corrupto]: *</p>
                     <label className="cursor-pointer bg-white border-2 border-dashed border-red-400 text-gray-800 font-bold py-2 px-2 rounded-lg flex items-center justify-center gap-1">
                       <Upload size={14} /> <span>{corruptPhoto ? '✅ Foto cargada' : 'Seleccionar foto'}</span>
                       <input type="file" accept="image/*" onChange={handleCorruptPhotoUpload} className="hidden" />
                     </label>
                   </div>
-
                   <div className="flex justify-end gap-2 pt-2">
-                    <button onClick={() => { setCorruptModalOpen(false); setCorruptOrderId(null); setCorruptReason(''); setCorruptPhoto(''); }} className="bg-gray-200 text-gray-700 font-bold px-4 py-2 rounded-lg text-xs">Cancelar</button>
-                    <button onClick={handleSaveCorruptPayment} className="bg-red-600 hover:bg-red-700 text-white font-bold px-4 py-2 rounded-lg text-xs shadow">Bloquear y Registrar</button>
+                    <button onClick={() => setCorruptModalOpen(false)} className="bg-gray-200 text-gray-700 font-bold px-4 py-2 rounded-lg text-xs">Cancelar</button>
+                    <button onClick={handleSaveCorruptPayment} className="bg-red-600 hover:bg-red-700 text-white font-bold px-4 py-2 rounded-lg text-xs shadow">Bloquear</button>
                   </div>
                 </div>
               </div>
@@ -1834,33 +1997,35 @@ export default function App() {
                   <h3 className="font-bold text-base text-blue-700 flex items-center gap-2">
                     <CreditCard size={20} /> Registrar Cobro y Marcar Pagado
                   </h3>
-                  <p className="text-xs text-gray-600">Selecciona el método de pago recibido:</p>
-
                   <div className="grid grid-cols-3 gap-2">
-                    <button type="button" onClick={() => setSelectedPayMethodAdmin('Efectivo')} className={`p-2.5 rounded-xl border font-bold text-xs flex flex-col items-center justify-center gap-1 ${selectedPayMethodAdmin === 'Efectivo' ? 'bg-green-600 text-white shadow' : 'bg-gray-50'}`}>
-                      💵 Efectivo
-                    </button>
-                    <button type="button" onClick={() => setSelectedPayMethodAdmin('Tarjeta')} className={`p-2.5 rounded-xl border font-bold text-xs flex flex-col items-center justify-center gap-1 ${selectedPayMethodAdmin === 'Tarjeta' ? 'bg-blue-600 text-white shadow' : 'bg-gray-50'}`}>
-                      💳 Tarjeta
-                    </button>
-                    <button type="button" onClick={() => setSelectedPayMethodAdmin('Pago Digital')} className={`p-2.5 rounded-xl border font-bold text-xs flex flex-col items-center justify-center gap-1 ${selectedPayMethodAdmin === 'Pago Digital' ? 'bg-purple-600 text-white shadow' : 'bg-gray-50'}`}>
-                      📱 Digital
-                    </button>
+                    <button type="button" onClick={() => setSelectedPayMethodAdmin('Efectivo')} className={`p-2.5 rounded-xl border font-bold text-xs ${selectedPayMethodAdmin === 'Efectivo' ? 'bg-green-600 text-white' : 'bg-gray-50'}`}>💵 Efectivo</button>
+                    <button type="button" onClick={() => setSelectedPayMethodAdmin('Tarjeta')} className={`p-2.5 rounded-xl border font-bold text-xs ${selectedPayMethodAdmin === 'Tarjeta' ? 'bg-blue-600 text-white' : 'bg-gray-50'}`}>💳 Tarjeta</button>
+                    <button type="button" onClick={() => setSelectedPayMethodAdmin('Pago Digital')} className={`p-2.5 rounded-xl border font-bold text-xs ${selectedPayMethodAdmin === 'Pago Digital' ? 'bg-purple-600 text-white' : 'bg-gray-50'}`}>📱 Digital</button>
                   </div>
 
                   {selectedPayMethodAdmin === 'Efectivo' && (
                     <div className="space-y-1 bg-green-50 p-2.5 rounded-xl border border-green-200 text-xs">
-                      <p className="font-bold text-green-900 flex items-center gap-1"><Camera size={14} /> Foto del Efectivo Recibido: *</p>
+                      <p className="font-bold text-green-900 flex items-center gap-1"><Camera size={14} /> [Foto del Efectivo Recibido]: *</p>
                       <label className="cursor-pointer bg-white border-2 border-dashed border-green-400 text-gray-800 font-bold py-2 px-2 rounded-lg flex items-center justify-center gap-1">
-                        <Upload size={14} /> <span>{cashPhoto ? '✅ Foto de efectivo lista' : 'Tomar foto del dinero'}</span>
+                        <Upload size={14} /> <span>{cashPhoto ? '✅ Foto lista' : 'Tomar foto del dinero'}</span>
                         <input type="file" accept="image/*" capture="environment" onChange={handleCashPhotoUpload} className="hidden" />
                       </label>
                     </div>
                   )}
 
+                  {selectedPayMethodAdmin !== 'Efectivo' && (
+                    <div className="space-y-1 bg-purple-50 p-2.5 rounded-xl border border-purple-200 text-xs">
+                      <p className="font-bold text-purple-900 flex items-center gap-1"><Camera size={14} /> [Foto del Pago Digital / Capture]:</p>
+                      <label className="cursor-pointer bg-white border-2 border-dashed border-purple-400 text-gray-800 font-bold py-2 px-2 rounded-lg flex items-center justify-center gap-1">
+                        <Upload size={14} /> <span>{cashPhoto ? '✅ Capture listo' : 'Subir capture digital'}</span>
+                        <input type="file" accept="image/*" onChange={handleCashPhotoUpload} className="hidden" />
+                      </label>
+                    </div>
+                  )}
+
                   <div className="flex justify-end gap-2 pt-2">
-                    <button onClick={() => { setPayModalOpen(false); setPayOrderId(null); setCashPhoto(''); }} className="bg-gray-200 text-gray-700 font-bold px-4 py-2 rounded-lg text-xs">Cancelar</button>
-                    <button onClick={handleConfirmAdminPayment} className="bg-green-600 hover:bg-green-700 text-white font-bold px-4 py-2 rounded-lg text-xs shadow">Guardar Pago</button>
+                    <button onClick={() => setPayModalOpen(false)} className="bg-gray-200 px-4 py-2 rounded-lg text-xs">Cancelar</button>
+                    <button onClick={handleConfirmAdminPayment} className="bg-green-600 text-white px-4 py-2 rounded-lg text-xs font-bold shadow">Guardar Pago</button>
                   </div>
                 </div>
               </div>
@@ -1872,19 +2037,13 @@ export default function App() {
                   <h3 className="font-bold text-base text-indigo-700 flex items-center gap-2">
                     <Receipt size={20} /> Subir Factura Oficial
                   </h3>
-                  <p className="text-xs text-gray-600">Sube la foto o archivo de la factura que el cliente podrá visualizar en su seguimiento:</p>
-
-                  <div className="space-y-1 bg-indigo-50 p-3 rounded-xl border border-indigo-200 text-xs">
-                    <p className="font-bold text-indigo-900 flex items-center gap-1"><Receipt size={14} /> Seleccionar Factura: *</p>
-                    <label className="cursor-pointer bg-white border-2 border-dashed border-indigo-400 text-gray-800 font-bold py-3 px-3 rounded-lg flex items-center justify-center gap-1">
-                      <Upload size={16} /> <span>{invoicePhoto ? '✅ Factura cargada (Cambiar)' : 'Elegir foto de la factura'}</span>
-                      <input type="file" accept="image/*" onChange={handleInvoicePhotoUpload} className="hidden" />
-                    </label>
-                  </div>
-
-                  <div className="flex justify-end gap-2 pt-2">
-                    <button onClick={() => { setInvoiceModalOpen(false); setInvoiceOrderId(null); setInvoicePhoto(''); }} className="bg-gray-200 text-gray-700 font-bold px-4 py-2 rounded-lg text-xs">Cancelar</button>
-                    <button onClick={handleSaveInvoice} className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-4 py-2 rounded-lg text-xs shadow">Guardar Factura</button>
+                  <label className="cursor-pointer bg-indigo-50 border-2 border-dashed border-indigo-400 text-xs font-bold py-3 px-3 rounded-xl flex flex-col items-center justify-center">
+                    <Upload size={18} /> {invoicePhoto ? '✅ Factura cargada' : 'Elegir foto de la factura'}
+                    <input type="file" accept="image/*" onChange={handleInvoicePhotoUpload} className="hidden" />
+                  </label>
+                  <div className="flex justify-end gap-2">
+                    <button onClick={() => setInvoiceModalOpen(false)} className="bg-gray-200 px-4 py-2 rounded-lg text-xs">Cancelar</button>
+                    <button onClick={handleSaveInvoice} className="bg-indigo-600 text-white px-4 py-2 rounded-lg text-xs font-bold">Guardar</button>
                   </div>
                 </div>
               </div>
@@ -1896,20 +2055,10 @@ export default function App() {
                   <h3 className="font-bold text-base text-emerald-700 flex items-center gap-2">
                     <DollarSign size={20} /> Ingresar Total a Pagar Exacto
                   </h3>
-                  <p className="text-xs text-gray-600">Escribe el monto exacto de la factura para actualizar el total que verá el cliente en su seguimiento:</p>
-                  
-                  <input 
-                    type="number"
-                    step="0.01"
-                    value={exactFinalAmount}
-                    onChange={e => setExactFinalAmount(e.target.value)}
-                    placeholder="Ej. 25.50"
-                    className="w-full border p-2.5 rounded-lg text-sm font-bold text-emerald-900"
-                  />
-
-                  <div className="flex justify-end gap-2 pt-2">
-                    <button onClick={() => { setFinalAmountModalOpen(false); setFinalAmountOrderId(null); }} className="bg-gray-200 text-gray-700 font-bold px-4 py-2 rounded-lg text-xs">Cancelar</button>
-                    <button onClick={handleSaveFinalAmount} className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-4 py-2 rounded-lg text-xs shadow">Guardar Total</button>
+                  <input type="number" step="0.01" value={exactFinalAmount} onChange={e => setExactFinalAmount(e.target.value)} placeholder="Ej. 25.50" className="w-full border p-2.5 rounded-lg text-sm font-bold" />
+                  <div className="flex justify-end gap-2">
+                    <button onClick={() => setFinalAmountModalOpen(false)} className="bg-gray-200 px-4 py-2 rounded-lg text-xs">Cancelar</button>
+                    <button onClick={handleSaveFinalAmount} className="bg-emerald-600 text-white px-4 py-2 rounded-lg text-xs font-bold">Guardar</button>
                   </div>
                 </div>
               </div>
@@ -1919,7 +2068,7 @@ export default function App() {
               <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
                 <div className="bg-white p-6 rounded-2xl max-w-md w-full shadow-2xl space-y-4">
                   <h3 className="font-bold text-base text-red-600">Motivo de No Entrega</h3>
-                  <textarea rows="3" value={failReason} onChange={e => setFailReason(e.target.value)} placeholder="Escribe el motivo..." className="w-full border p-3 rounded-lg text-xs"></textarea>
+                  <textarea rows="3" value={failReason} onChange={e => setFailReason(e.target.value)} placeholder="Motivo..." className="w-full border p-3 rounded-lg text-xs"></textarea>
                   <div className="flex justify-end gap-2">
                     <button onClick={() => setFailModalOpen(false)} className="bg-gray-200 px-4 py-2 rounded-lg text-xs">Cancelar</button>
                     <button onClick={handleSaveFailReason} className="bg-red-600 text-white px-4 py-2 rounded-lg text-xs font-bold">Guardar</button>
