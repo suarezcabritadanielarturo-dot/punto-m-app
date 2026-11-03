@@ -117,6 +117,12 @@ export default function App() {
   const [changeAmountGiven, setChangeAmountGiven] = useState('');
   const [changeProofPhoto, setChangeProofPhoto] = useState('');
 
+  // Estados para Devolución Digital / Reembolso al Cliente en Admin
+  const [refundModalOpen, setRefundModalOpen] = useState(false);
+  const [refundOrderId, setRefundOrderId] = useState(null);
+  const [refundAmount, setRefundAmount] = useState('');
+  const [refundProofPhoto, setRefundProofPhoto] = useState('');
+
   const [returnModalOpen, setReturnModalOpen] = useState(false);
   const [returnOrderId, setReturnOrderId] = useState(null);
   const [returnProof, setReturnProof] = useState('');
@@ -407,6 +413,7 @@ export default function App() {
       returnedProductsList: [],
       returnedProductsPhoto: '',
       changeGivenRecord: null,
+      refundRecord: null, // Registro de devolución digital al cliente
       failReason: '',
       returnStatus: 'No aplica',
       returnProof: '',
@@ -473,6 +480,15 @@ export default function App() {
     if (file) {
       const reader = new FileReader();
       reader.onloadend = () => setChangeProofPhoto(reader.result);
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleRefundProofPhotoUpload = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => setRefundProofPhoto(reader.result);
       reader.readAsDataURL(file);
     }
   };
@@ -650,6 +666,39 @@ export default function App() {
     } catch (err) {
       console.error(err);
       alert("Error al guardar el vuelto.");
+    }
+  };
+
+  // GUARDAR CASO DE DEVOLUCIÓN DE DINERO (REEMBOLSO DIGITAL)
+  const handleSaveRefundRecord = async () => {
+    const refVal = parseFloat(refundAmount);
+    if (isNaN(refVal) || refVal <= 0) {
+      alert("⚠️ Ingrese un monto de reembolso válido.");
+      return;
+    }
+    if (!refundProofPhoto) {
+      alert("⚠️ Adjunte la foto del comprobante de transferencia o pago digital.");
+      return;
+    }
+
+    try {
+      const orderRef = doc(db, 'orders', refundOrderId);
+      await updateDoc(orderRef, {
+        refundRecord: {
+          amount: refVal,
+          photo: refundProofPhoto,
+          date: new Date().toISOString()
+        }
+      });
+
+      setRefundModalOpen(false);
+      setRefundOrderId(null);
+      setRefundAmount('');
+      setRefundProofPhoto('');
+      alert("✅ ¡Caso de devolución de dinero registrado y publicado para el cliente!");
+    } catch (err) {
+      console.error(err);
+      alert("Error al registrar la devolución.");
     }
   };
 
@@ -1088,6 +1137,7 @@ export default function App() {
               </div>
             )}
 
+            {/* SEGUIMIENTO DEL CLIENTE CON PESTAÑA DE CASO DE DEVOLUCIÓN DE DINERO */}
             {view === 'tracking' && (
               <div className="max-w-3xl mx-auto space-y-6">
                 <div className="bg-white p-6 rounded-2xl shadow border">
@@ -1150,11 +1200,33 @@ export default function App() {
                               </div>
                             )}
 
+                            {/* PESTAÑA / SECCIÓN: CASO DE DEVOLUCIÓN DE DINERO */}
+                            {order.refundRecord && (
+                              <div className="bg-purple-50 border-2 border-purple-300 p-4 rounded-2xl text-xs space-y-2">
+                                <p className="font-black text-purple-900 flex items-center gap-1.5 text-sm">
+                                  <Banknote size={18} className="text-purple-700" /> Caso de Devolución de Dinero / Reembolso
+                                </p>
+                                <p className="text-purple-800">
+                                  Monto devuelto: <strong>S/ {Number(order.refundRecord.amount).toFixed(2)}</strong>
+                                </p>
+                                {order.refundRecord.photo ? (
+                                  <div className="flex items-center justify-between bg-white p-2.5 rounded-xl border border-purple-200">
+                                    <span className="font-bold text-gray-700">Comprobante de Transferencia Emitido:</span>
+                                    <button onClick={() => setPreviewImage(order.refundRecord.photo)} className="bg-purple-600 text-white font-bold px-3 py-1.5 rounded-lg text-xs flex items-center gap-1 shadow">
+                                      <Eye size={14} /> Ver Comprobante
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <p className="text-amber-700 font-medium">⏳ Su devolución está en proceso de transferencia.</p>
+                                )}
+                              </div>
+                            )}
+
                             <div className="bg-gray-50 p-3 rounded-xl text-xs space-y-1">
                               <p className="font-bold text-gray-700">Productos:</p>
                               <p className="text-gray-600">{order.items?.map(i => `${i.qty}x ${i.name}`).join(', ')}</p>
                               <div className="flex justify-between font-bold text-gray-800 border-t pt-2">
-                                <span>Total Actualizado:</span>
+                                <span>Total a Pagar / Pagado:</span>
                                 <span className="text-green-800 text-sm">S/ {Number(order.total || order.approxTotal).toFixed(2)}</span>
                               </div>
                             </div>
@@ -1271,8 +1343,6 @@ export default function App() {
                         const finalTotal = Number(order.total || order.approxTotal || 0);
                         const actualChangeGiven = Number(order.changeGivenRecord?.amount || 0);
                         const cashCollected = order.paymentPreference === 'Efectivo' ? Number(order.cashPayAmount || finalTotal) : 0;
-                        // Cálculo matemático del dinero exacto que el repartidor debe entregar/devolver a la tienda:
-                        // (Efectivo cobrado al cliente) menos (El vuelto real entregado).
                         const returnToStore = order.paymentPreference === 'Efectivo' ? Math.max(0, cashCollected - actualChangeGiven) : 0;
 
                         return (
@@ -1311,15 +1381,23 @@ export default function App() {
                                     </p>
                                     <p className="text-teal-900 font-black">
                                       • Vuelto real entregado: <strong>S/ {actualChangeGiven.toFixed(2)}</strong>
-                                      {order.changeGivenRecord?.photo && (
-                                        <button onClick={() => setPreviewImage(order.changeGivenRecord.photo)} className="ml-2 text-blue-700 underline font-normal inline-flex items-center gap-0.5">
-                                          <Eye size={12} /> Ver foto
-                                        </button>
-                                      )}
                                     </p>
                                     <p className="text-green-900 font-black pt-1 border-t border-blue-200">
                                       💵 Total efectivo a devolver por el repartidor a la tienda: <strong>S/ {returnToStore.toFixed(2)}</strong>
                                     </p>
+                                  </div>
+                                )}
+
+                                {order.refundRecord && (
+                                  <div className="bg-purple-50 p-2.5 rounded-lg border border-purple-200 space-y-1 mt-1">
+                                    <p className="text-purple-900 font-bold">
+                                      🔄 Reembolso Digital Registrado: S/ {Number(order.refundRecord.amount).toFixed(2)}
+                                    </p>
+                                    {order.refundRecord.photo && (
+                                      <button onClick={() => setPreviewImage(order.refundRecord.photo)} className="text-xs text-purple-700 underline font-bold flex items-center gap-1">
+                                        <Eye size={12} /> Ver comprobante de reembolso transferido
+                                      </button>
+                                    )}
                                   </div>
                                 )}
 
@@ -1332,7 +1410,7 @@ export default function App() {
                                 )}
 
                                 <p className="font-bold text-green-800 text-xs mt-1">
-                                  Total Actualizado: S/ {finalTotal.toFixed(2)}
+                                  Total a Pagar Actualizado: S/ {finalTotal.toFixed(2)}
                                 </p>
                                 
                                 {order.invoicePhoto && (
@@ -1368,23 +1446,11 @@ export default function App() {
                             <div className="bg-gray-50 p-3 rounded-xl border flex flex-col sm:flex-row justify-between items-center gap-3">
                               <div className="text-xs">
                                 <p className="font-bold text-gray-700">Gestión Administrativa:</p>
-                                <p className="text-gray-500">Registra pagos, facturas, vuelto real, devolución de productos o pago corrupto.</p>
+                                <p className="text-gray-500">Factura, montos, vuelto real, devolución de productos o reembolso digital.</p>
                               </div>
 
                               <div className="flex flex-wrap items-center gap-2">
-                                <button 
-                                  onClick={() => {
-                                    setPayOrderId(order.id);
-                                    setSelectedPayMethodAdmin(order.paymentPreference || 'Efectivo');
-                                    setPayModalOpen(true);
-                                  }}
-                                  className={`px-3 py-2 rounded-xl font-bold text-xs flex items-center gap-1 shadow ${
-                                    order.isPaid ? 'bg-green-100 text-green-800 border border-green-300' : 'bg-blue-600 text-white hover:bg-blue-700'
-                                  }`}
-                                >
-                                  <CreditCard size={14} /> {order.isPaid ? '✅ Pago Registrado' : '💵 Registrar Pago'}
-                                </button>
-
+                                {/* BOTÓN PARA SUBIR FACTURA */}
                                 <button 
                                   onClick={() => {
                                     setInvoiceOrderId(order.id);
@@ -1395,7 +1461,31 @@ export default function App() {
                                   <Receipt size={14} /> {order.invoicePhoto ? '🔄 Cambiar Factura' : '📄 Subir Factura'}
                                 </button>
 
-                                {/* BOTÓN DE VUELTO REAL INGRESADO */}
+                                {/* BOTÓN PARA INGRESAR TOTAL A PAGAR EXACTO */}
+                                <button 
+                                  onClick={() => {
+                                    setFinalAmountOrderId(order.id);
+                                    setExactFinalAmount(order.total || order.approxTotal || '');
+                                    setFinalAmountModalOpen(true);
+                                  }}
+                                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-3 py-2 rounded-xl text-xs flex items-center gap-1 shadow"
+                                >
+                                  <DollarSign size={14} /> Total a Pagar
+                                </button>
+
+                                <button 
+                                  onClick={() => {
+                                    setPayOrderId(order.id);
+                                    setSelectedPayMethodAdmin(order.paymentPreference || 'Efectivo');
+                                    setPayModalOpen(true);
+                                  }}
+                                  className={`px-3 py-2 rounded-xl font-bold text-xs flex items-center gap-1 shadow ${
+                                    order.isPaid ? 'bg-green-100 text-green-800 border border-green-300' : 'bg-blue-600 text-white hover:bg-blue-700'
+                                  }`}
+                                >
+                                  <CreditCard size={14} /> {order.isPaid ? '✅ Pagado' : '💵 Registrar Pago'}
+                                </button>
+
                                 <button 
                                   onClick={() => {
                                     setChangeOrderId(order.id);
@@ -1404,7 +1494,19 @@ export default function App() {
                                   }}
                                   className="bg-teal-600 hover:bg-teal-700 text-white font-bold px-3 py-2 rounded-xl text-xs flex items-center gap-1 shadow"
                                 >
-                                  <Banknote size={14} /> Ingresar Vuelto Real
+                                  <Banknote size={14} /> Vuelto Real
+                                </button>
+
+                                {/* BOTÓN PARA REGISTRAR REEMBOLSO DIGITAL (CASO DE DEVOLUCIÓN DE DINERO) */}
+                                <button 
+                                  onClick={() => {
+                                    setRefundOrderId(order.id);
+                                    setRefundAmount('');
+                                    setRefundModalOpen(true);
+                                  }}
+                                  className="bg-purple-600 hover:bg-purple-700 text-white font-bold px-3 py-2 rounded-xl text-xs flex items-center gap-1 shadow"
+                                >
+                                  <RefreshCw size={14} /> Devolución Dinero
                                 </button>
 
                                 <button 
@@ -1414,7 +1516,7 @@ export default function App() {
                                   }}
                                   className="bg-amber-600 hover:bg-amber-700 text-white font-bold px-3 py-2 rounded-xl text-xs flex items-center gap-1 shadow"
                                 >
-                                  <ReturnIcon size={14} /> Devolución Producto
+                                  <ReturnIcon size={14} /> Dev. Producto
                                 </button>
 
                                 <button 
@@ -1517,7 +1619,7 @@ export default function App() {
                             <div className="space-y-1">
                               <p className="font-bold text-sm text-gray-900">{order.clientName} (Telf: {order.clientPhone})</p>
                               <p className="text-red-700 font-bold">⚠️ Motivo: {order.corruptReason}</p>
-                              <p className="text-gray-600">Total Actualizado: S/ {Number(order.total || order.approxTotal).toFixed(2)}</p>
+                              <p className="text-gray-600">Total a Pagar Actualizado: S/ {Number(order.total || order.approxTotal).toFixed(2)}</p>
                               {order.corruptPhoto && (
                                 <button onClick={() => setPreviewImage(order.corruptPhoto)} className="text-blue-700 font-bold underline flex items-center gap-1 cursor-pointer">
                                   <Eye size={14} /> Ver Comprobante/Efectivo con Incidencia
@@ -1586,7 +1688,40 @@ export default function App() {
               </div>
             )}
 
-            {/* MODAL PARA INGRESAR EL VUELTO REAL */}
+            {/* MODAL PARA REGISTRAR REEMBOLSO / CASO DE DEVOLUCIÓN DE DINERO */}
+            {refundModalOpen && (
+              <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+                <div className="bg-white p-6 rounded-2xl max-w-md w-full shadow-2xl space-y-4">
+                  <h3 className="font-bold text-base text-purple-700 flex items-center gap-2">
+                    <RefreshCw size={20} /> Registrar Devolución de Dinero (Reembolso)
+                  </h3>
+                  <p className="text-xs text-gray-600">Ingrese el monto exacto a reembolsar por transferencia/pago digital y adjunte el comprobante de pago para que aparezca en el seguimiento del cliente:</p>
+
+                  <input 
+                    type="number"
+                    step="0.01"
+                    value={refundAmount}
+                    onChange={e => setRefundAmount(e.target.value)}
+                    placeholder="Monto a devolver (Ej. 10.00)"
+                    className="w-full border p-2.5 rounded-lg text-sm font-bold text-purple-900"
+                  />
+
+                  <div className="space-y-1 bg-purple-50 p-3 rounded-xl border border-purple-200 text-xs">
+                    <p className="font-bold text-purple-900 flex items-center gap-1"><Camera size={14} /> Foto del Comprobante de Reembolso: *</p>
+                    <label className="cursor-pointer bg-white border-2 border-dashed border-purple-400 text-gray-800 font-bold py-2 px-2 rounded-lg flex items-center justify-center gap-1">
+                      <Upload size={14} /> <span>{refundProofPhoto ? '✅ Comprobante cargado' : 'Seleccionar foto de transferencia'}</span>
+                      <input type="file" accept="image/*" onChange={handleRefundProofPhotoUpload} className="hidden" />
+                    </label>
+                  </div>
+
+                  <div className="flex justify-end gap-2 pt-2">
+                    <button onClick={() => { setRefundModalOpen(false); setRefundOrderId(null); setRefundAmount(''); setRefundProofPhoto(''); }} className="bg-gray-200 text-gray-700 font-bold px-4 py-2 rounded-lg text-xs">Cancelar</button>
+                    <button onClick={handleSaveRefundRecord} className="bg-purple-600 hover:bg-purple-700 text-white font-bold px-4 py-2 rounded-lg text-xs shadow">Guardar y Publicar</button>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {changeModalOpen && (
               <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
                 <div className="bg-white p-6 rounded-2xl max-w-md w-full shadow-2xl space-y-4">
@@ -1759,9 +1894,9 @@ export default function App() {
               <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
                 <div className="bg-white p-6 rounded-2xl max-w-md w-full shadow-2xl space-y-4">
                   <h3 className="font-bold text-base text-emerald-700 flex items-center gap-2">
-                    <DollarSign size={20} /> Ingresar Monto Definitivo a Pagar
+                    <DollarSign size={20} /> Ingresar Total a Pagar Exacto
                   </h3>
-                  <p className="text-xs text-gray-600">Escribe el monto exacto de la factura para actualizar el total final que verá el cliente:</p>
+                  <p className="text-xs text-gray-600">Escribe el monto exacto de la factura para actualizar el total que verá el cliente en su seguimiento:</p>
                   
                   <input 
                     type="number"
@@ -1769,12 +1904,12 @@ export default function App() {
                     value={exactFinalAmount}
                     onChange={e => setExactFinalAmount(e.target.value)}
                     placeholder="Ej. 25.50"
-                    className="w-full border p-2 rounded-lg text-sm font-bold"
+                    className="w-full border p-2.5 rounded-lg text-sm font-bold text-emerald-900"
                   />
 
                   <div className="flex justify-end gap-2 pt-2">
                     <button onClick={() => { setFinalAmountModalOpen(false); setFinalAmountOrderId(null); }} className="bg-gray-200 text-gray-700 font-bold px-4 py-2 rounded-lg text-xs">Cancelar</button>
-                    <button onClick={handleSaveFinalAmount} className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-4 py-2 rounded-lg text-xs shadow">Guardar Monto</button>
+                    <button onClick={handleSaveFinalAmount} className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-4 py-2 rounded-lg text-xs shadow">Guardar Total</button>
                   </div>
                 </div>
               </div>
