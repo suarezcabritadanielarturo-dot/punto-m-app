@@ -21,7 +21,11 @@ import {
   Image as ImageIcon,
   Calendar,
   AlertTriangle,
-  Eye
+  Eye,
+  DollarSign,
+  PieChart,
+  RefreshCw,
+  Lock
 } from 'lucide-react';
 import { auth, googleProvider, db, signInWithPopup, signOut } from './firebase';
 import { 
@@ -41,6 +45,7 @@ export default function App() {
   const [user, setUser] = useState(null);
   const [userRole, setUserRole] = useState('client'); 
   const [view, setView] = useState('catalog'); 
+  const [adminSubTab, setAdminSubTab] = useState('orders'); // 'orders', 'accounting', 'returns'
   
   const [products, setProducts] = useState([
     { id: '1', name: 'Harina de Trigo 1kg', price: 4.50, category: 'Viveres', image: 'https://images.unsplash.com/photo-1574323347407-f5e1ad6d020b?w=300' },
@@ -53,22 +58,30 @@ export default function App() {
   const [orders, setOrders] = useState([]);
   const [selectedClientFilter, setSelectedClientFilter] = useState('all');
   
-  // Preferencia de Fecha y Hora de Entrega por el cliente
+  // Datos del cliente para el pedido
   const [deliveryDate, setDeliveryDate] = useState('');
   const [deliveryTime, setDeliveryTime] = useState('');
+  const [clientPhone, setClientPhone] = useState('');
 
-  // Modal para motivo de "No se pudo entregar"
+  // Modales
   const [failModalOpen, setFailModalOpen] = useState(false);
   const [failOrderId, setFailOrderId] = useState(null);
   const [failReason, setFailReason] = useState('');
 
-  // Modal para opciones de Pago (Efectivo o Capture)
   const [payModalOpen, setPayModalOpen] = useState(false);
   const [payOrderId, setPayOrderId] = useState(null);
   const [paymentProof, setPaymentProof] = useState('');
 
-  // Modal para ver el comprobante en grande
+  const [returnModalOpen, setReturnModalOpen] = useState(false);
+  const [returnOrderId, setReturnOrderId] = useState(null);
+  const [returnProof, setReturnProof] = useState('');
+
   const [previewImage, setPreviewImage] = useState(null);
+
+  // Contabilidad / Cierre de día manual
+  const [manualCaptureSum, setManualCaptureSum] = useState('');
+  const [dayClosed, setDayClosed] = useState(false);
+  const [closedDayData, setClosedDayData] = useState(null);
 
   const [companyHeader] = useState({
     name: 'PUNTO M',
@@ -79,54 +92,34 @@ export default function App() {
   });
 
   const [newProduct, setNewProduct] = useState({ name: '', price: '', category: 'Viveres', image: '' });
-  
   const [aiFileText, setAiFileText] = useState('');
   const [isProcessingFile, setIsProcessingFile] = useState(false);
   const [aiStatusMessage, setAiStatusMessage] = useState('');
 
-  // Estados Asistente IA Clientes
   const [clientPrompt, setClientPrompt] = useState('');
   const [isAiOrdering, setIsAiOrdering] = useState(false);
   const [aiOrderFeedback, setAiOrderFeedback] = useState('');
 
-  // Ubicación GPS
   const [clientLocation, setClientLocation] = useState(null);
   const [locationLoading, setLocationLoading] = useState(false);
 
   useEffect(() => {
-    // Escuchar productos en Firestore
     const unsubscribeProducts = onSnapshot(collection(db, 'products'), (snapshot) => {
-      const dbProducts = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
-      if (dbProducts.length > 0) {
-        setProducts(dbProducts);
-      }
-    }, (error) => {
-      console.log("Modo offline o usando catálogo base:", error);
+      const dbProducts = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      if (dbProducts.length > 0) setProducts(dbProducts);
     });
 
-    // Escuchar pedidos en Firestore ordenados por llegada y hora de entrega preferida
     const unsubscribeOrders = onSnapshot(collection(db, 'orders'), (snapshot) => {
-      const dbOrders = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
-      
+      const dbOrders = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       dbOrders.sort((a, b) => {
         const timeA = `${a.deliveryDate || ''} ${a.deliveryTime || ''}`;
         const timeB = `${b.deliveryDate || ''} ${b.deliveryTime || ''}`;
         if (timeA !== timeB) return timeA.localeCompare(timeB);
         return (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0);
       });
-
       setOrders(dbOrders);
-    }, (error) => {
-      console.log("Error leyendo pedidos:", error);
     });
 
-    // Autenticación
     const unsubscribeAuth = auth.onAuthStateChanged(async (currentUser) => {
       if (currentUser) {
         const adminEmail = 'suarez.cabrita.daniel.arturo@gmail.com';
@@ -147,7 +140,6 @@ export default function App() {
           if (userDoc.exists() && !isOwner) {
             assignedRole = userDoc.data().role || 'client';
           }
-
           await setDoc(userDocRef, {
             name: currentUser.displayName,
             email: currentUser.email,
@@ -155,9 +147,8 @@ export default function App() {
             lastLogin: new Date()
           }, { merge: true });
         } catch (e) {
-          console.log("Firestore Auth Sync error:", e);
+          console.log("Error Auth sync:", e);
         }
-
         setUserRole(assignedRole);
       } else {
         setUser(null);
@@ -176,7 +167,7 @@ export default function App() {
     try {
       await signInWithPopup(auth, googleProvider);
     } catch (err) {
-      console.error("Error iniciando sesión:", err);
+      console.error("Error al iniciar sesión:", err);
     }
   };
 
@@ -202,10 +193,9 @@ export default function App() {
 
   const cartTotal = cart.reduce((sum, item) => sum + (item.price * item.qty), 0);
 
-  // Obtener ubicación GPS actual
   const handleGetLocation = () => {
     if (!navigator.geolocation) {
-      alert("Tu navegador no soporta la geolocalización.");
+      alert("Tu navegador no soporta geolocalización.");
       return;
     }
     setLocationLoading(true);
@@ -220,27 +210,30 @@ export default function App() {
         setLocationLoading(false);
       },
       (error) => {
-        console.error("Error obteniendo ubicación:", error);
-        alert("No se pudo obtener la ubicación. Asegúrate de dar permisos de GPS.");
+        console.error("Error GPS:", error);
+        alert("No se pudo obtener la ubicación.");
         setLocationLoading(false);
       }
     );
   };
 
-  // Crear pedido con Validación de Sesión y Hora de Entrega
   const handleGenerateReceipt = async () => {
     if (!user) {
       alert("⚠️ Debe iniciar sesión obligatoriamente antes de realizar un pedido.");
       handleLogin();
       return;
     }
-
+    if (!clientPhone.trim()) {
+      alert("⚠️ Por favor ingrese su número de teléfono de contacto para la entrega.");
+      return;
+    }
     if (cart.length === 0) return;
 
     const newOrderData = {
       clientUid: user.uid,
       clientName: user.name,
       clientEmail: user.email,
+      clientPhone: clientPhone,
       items: cart,
       total: cartTotal,
       location: clientLocation || null,
@@ -250,6 +243,8 @@ export default function App() {
       paymentMethod: '',
       paymentProof: '',
       failReason: '',
+      returnStatus: 'No aplica',
+      returnProof: '',
       createdAt: new Date()
     };
 
@@ -257,12 +252,11 @@ export default function App() {
       await addDoc(collection(db, 'orders'), newOrderData);
       setView('receipt');
     } catch (err) {
-      console.error("Error creando el pedido:", err);
+      console.error("Error creando pedido:", err);
       setView('receipt');
     }
   };
 
-  // Carga de imagen desde el computador
   const handleImageFileUpload = (e) => {
     const file = e.target.files[0];
     if (file) {
@@ -274,7 +268,6 @@ export default function App() {
     }
   };
 
-  // Carga de capture de pago desde admin
   const handlePaymentProofUpload = (e) => {
     const file = e.target.files[0];
     if (file) {
@@ -286,14 +279,23 @@ export default function App() {
     }
   };
 
-  // Asistente IA Clientes
+  const handleReturnProofUpload = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setReturnProof(reader.result);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
   const handleClientAiOrder = async () => {
     if (!user) {
-      alert("⚠️ Debes iniciar sesión con Google para usar el Asistente de Pedidos.");
+      alert("⚠️ Debes iniciar sesión con Google para usar el Asistente.");
       handleLogin();
       return;
     }
-
     if (!clientPrompt.trim()) return;
 
     setIsAiOrdering(true);
@@ -308,7 +310,6 @@ export default function App() {
       products.forEach(prod => {
         const prodNameLower = prod.name.toLowerCase();
         const mainKeyword = prodNameLower.split(' ')[0];
-
         if (textLower.includes(mainKeyword) || textLower.includes(prodNameLower)) {
           addToCart(prod);
           foundAny = true;
@@ -327,59 +328,37 @@ export default function App() {
         }
       });
 
-      if (foundAny) {
-        feedbackMessages.push("✅ ¡Productos disponibles agregados al carrito!");
-      }
-
-      if (notFoundItems.length > 0) {
-        feedbackMessages.push(`⚠️ Los siguientes productos no los tenemos en existencia: ${notFoundItems.join(', ')}.`);
-      }
-
-      if (!foundAny && notFoundItems.length === 0) {
-        feedbackMessages.push("No se pudieron identificar productos en tu mensaje.");
-      }
+      if (foundAny) feedbackMessages.push("✅ ¡Productos disponibles agregados al carrito!");
+      if (notFoundItems.length > 0) feedbackMessages.push(`⚠️ No tenemos en existencia: ${notFoundItems.join(', ')}.`);
+      if (!foundAny && notFoundItems.length === 0) feedbackMessages.push("No se pudieron identificar productos.");
 
       setAiOrderFeedback(feedbackMessages.join(' '));
       setClientPrompt('');
-
     } catch (error) {
-      console.error("Error en asistente de pedidos:", error);
+      console.error("Error en IA:", error);
       setAiOrderFeedback("Hubo un error al procesar tu pedido.");
     } finally {
       setIsAiOrdering(false);
     }
   };
 
-  // Importar con Gemini IA
   const handleProcessAiFileWithGemini = async () => {
     if (!aiFileText.trim()) {
-      alert("Por favor pega el texto de la factura o inventario primero.");
+      alert("Pega el texto de inventario primero.");
       return;
     }
-
     setIsProcessingFile(true);
-    setAiStatusMessage('🤖 Gemini IA está analizando el documento...');
+    setAiStatusMessage('🤖 Gemini IA está analizando...');
 
     try {
-      const promptText = `Analiza la siguiente lista de inventario o factura y extrae una lista JSON estricta de productos.
-      Cada objeto debe tener exactamente las propiedades:
-      - "name": nombre del producto (string)
-      - "price": precio como número decimal (ejemplo: 4.50)
-      - "category": categoría estimada (string, ejemplo: "Viveres", "Bebidas", "Limpieza")
-
-      Texto del documento:
-      """
-      ${aiFileText}
-      """
-
-      Responde ÚNICAMENTE con la estructura JSON en un array, ejemplo: [{"name": "Arroz", "price": 3.50, "category": "Viveres"}] sin comentarios ni markdown extra.`;
+      const promptText = `Analiza la lista y extrae JSON estricta de productos:
+      [{"name": "...", "price": 0.0, "category": "..."}]
+      Texto: """${aiFileText}"""`;
 
       const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: promptText }] }]
-        })
+        body: JSON.stringify({ contents: [{ parts: [{ text: promptText }] }] })
       });
 
       const data = await response.json();
@@ -389,55 +368,47 @@ export default function App() {
       const extractedProducts = JSON.parse(cleanJsonStr);
 
       if (Array.isArray(extractedProducts) && extractedProducts.length > 0) {
-        setAiStatusMessage(`📥 Guardando ${extractedProducts.length} productos en la base de datos Firestore...`);
-
         for (const item of extractedProducts) {
           await addDoc(collection(db, 'products'), {
-            name: item.name || 'Producto Nuevo',
-            price: parseFloat(item.price) || 0.00,
+            name: item.name || 'Nuevo',
+            price: parseFloat(item.price) || 0,
             category: item.category || 'General',
             image: 'https://images.unsplash.com/photo-1542838132-92c53300491e?w=300',
             createdAt: new Date()
           });
         }
-
-        alert(`¡Éxito! Se analizaron y agregaron ${extractedProducts.length} productos a la base de datos Firestore de PUNTO M.`);
+        alert(`¡Se agregaron ${extractedProducts.length} productos!`);
         setAiFileText('');
       } else {
-        alert("La IA no encontró productos válidos con formato de nombre y precio.");
+        alert("La IA no encontró productos válidos.");
       }
-
     } catch (error) {
-      console.error("Error al procesar con Gemini:", error);
-      alert("Hubo un error al procesar el archivo con Gemini.");
+      console.error("Error IA:", error);
+      alert("Error procesando archivo.");
     } finally {
       setIsProcessingFile(false);
       setAiStatusMessage('');
     }
   };
 
-  // Cambiar estado de pedido
   const handleUpdateOrderStatus = async (orderId, newStatus, extraData = {}) => {
     try {
       const orderRef = doc(db, 'orders', orderId);
       await updateDoc(orderRef, { status: newStatus, ...extraData });
     } catch (err) {
-      console.error("Error actualizando estado del pedido:", err);
+      console.error("Error actualizando estado:", err);
     }
   };
 
-  // Guardar pago en Efectivo
   const handlePayCash = async () => {
     await handleUpdateOrderStatus(payOrderId, 'Pagado', { paymentMethod: 'Efectivo', paymentProof: '' });
     setPayModalOpen(false);
     setPayOrderId(null);
-    setPaymentProof('');
   };
 
-  // Guardar pago con Capture
   const handlePayCapture = async () => {
     if (!paymentProof) {
-      alert("Por favor selecciona o sube la imagen del capture de pago.");
+      alert("Selecciona el capture de pago.");
       return;
     }
     await handleUpdateOrderStatus(payOrderId, 'Pagado', { paymentMethod: 'Transferencia / Capture', paymentProof: paymentProof });
@@ -446,19 +417,33 @@ export default function App() {
     setPaymentProof('');
   };
 
-  // Guardar motivo de fallo de entrega
   const handleSaveFailReason = async () => {
     if (!failReason.trim()) {
-      alert("Por favor escribe el motivo por el cual no se pudo entregar.");
+      alert("Escribe el motivo.");
       return;
     }
-    await handleUpdateOrderStatus(failOrderId, 'No se pudo entregar', { failReason: failReason });
+    await handleUpdateOrderStatus(failOrderId, 'No se pudo entregar', { failReason: failReason, returnStatus: 'Pendiente Devolución' });
     setFailModalOpen(false);
     setFailOrderId(null);
     setFailReason('');
   };
 
-  // Imprimir Pedido desde Admin
+  const handleSaveReturnProof = async () => {
+    if (!returnProof) {
+      alert("Sube el capture de la devolución.");
+      return;
+    }
+    try {
+      const orderRef = doc(db, 'orders', returnOrderId);
+      await updateDoc(orderRef, { returnStatus: 'Devuelto', returnProof: returnProof });
+      setReturnModalOpen(false);
+      setReturnOrderId(null);
+      setReturnProof('');
+    } catch (err) {
+      console.error("Error guardando devolución:", err);
+    }
+  };
+
   const handlePrintOrder = (orderToPrint) => {
     const printWindow = window.open('', '_blank');
     const itemsHtml = orderToPrint.items ? orderToPrint.items.map(item => 
@@ -469,71 +454,52 @@ export default function App() {
       </tr>`
     ).join('') : '';
 
-    const locationHtml = orderToPrint.location 
-      ? `<p><strong>Ubicación GPS:</strong> <a href="${orderToPrint.location.mapUrl}">${orderToPrint.location.mapUrl}</a></p>`
-      : '<p><strong>Ubicación GPS:</strong> No compartida</p>';
-
-    const failReasonHtml = orderToPrint.failReason 
-      ? `<p style="color: red;"><strong>Motivo de no entrega:</strong> ${orderToPrint.failReason}</p>`
-      : '';
-
-    const paymentInfoHtml = orderToPrint.status === 'Pagado' || orderToPrint.status === 'Entregado'
-      ? `<p><strong>Método de Pago:</strong> ${orderToPrint.paymentMethod || 'Pagado'}</p>`
-      : '';
-
     printWindow.document.write(`
       <html>
-        <head>
-          <title>Pedido PUNTO M - ${orderToPrint.id}</title>
-          <style>
-            body { font-family: Arial, sans-serif; padding: 20px; font-size: 12px; }
-            .header { text-align: center; border-bottom: 2px solid #000; padding-bottom: 10px; margin-bottom: 10px; }
-            .total { font-size: 16px; font-weight: bold; text-align: right; margin-top: 15px; }
-            table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-          </style>
-        </head>
-        <body>
-          <div class="header">
-            <h2>PUNTO M</h2>
-            <p>RUC 20123456789 - Av. Principal 123, Lima</p>
-            <p>Tel: +58 424 5719928</p>
-          </div>
-          <p><strong>Cliente:</strong> ${orderToPrint.clientName}</p>
-          <p><strong>Email:</strong> ${orderToPrint.clientEmail || 'N/A'}</p>
-          <p><strong>Fecha/Hora Entrega Preferida:</strong> ${orderToPrint.deliveryDate || 'N/A'} - ${orderToPrint.deliveryTime || 'N/A'}</p>
-          <p><strong>Estado Actual:</strong> ${orderToPrint.status}</p>
-          ${paymentInfoHtml}
-          ${failReasonHtml}
-          ${locationHtml}
-          <table>
-            <thead>
-              <tr style="background: #f0f0f0;">
-                <th style="text-align: left; padding: 4px;">Cant.</th>
-                <th style="text-align: left; padding: 4px;">Producto</th>
-                <th style="text-align: right; padding: 4px;">Total</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${itemsHtml}
-            </tbody>
-          </table>
-          <div class="total">
-            Total aproximado a pagar: S/ ${Number(orderToPrint.total).toFixed(2)}
-          </div>
-          <script>
-            window.onload = function() { window.print(); window.close(); }
-          </script>
+        <head><title>Pedido PUNTO M</title></head>
+        <body style="font-family: Arial; padding: 20px; font-size: 12px;">
+          <h2>PUNTO M - RUC 20123456789</h2>
+          <p><strong>Cliente:</strong> ${orderToPrint.clientName} (${orderToPrint.clientPhone || 'Sin teléfono'})</p>
+          <p><strong>Estado:</strong> ${orderToPrint.status}</p>
+          <table><tbody>${itemsHtml}</tbody></table>
+          <h3>Total: S/ ${Number(orderToPrint.total).toFixed(2)}</h3>
+          <script>window.onload = function() { window.print(); window.close(); }</script>
         </body>
       </html>
     `);
     printWindow.document.close();
   };
 
-  const uniqueClients = Array.from(new Set(orders.map(o => o.clientEmail || o.clientName))).filter(Boolean);
+  // Cálculos Contabilidad
+  const paidOrders = orders.filter(o => o.status === 'Pagado' || o.status === 'Entregado');
+  const cashTotal = paidOrders.filter(o => o.paymentMethod === 'Efectivo').reduce((sum, o) => sum + Number(o.total), 0);
+  const captureOrders = paidOrders.filter(o => o.paymentMethod === 'Transferencia / Capture');
+  const captureSystemTotal = captureOrders.reduce((sum, o) => sum + Number(o.total), 0);
+  const manualCaptureParsed = parseFloat(manualCaptureSum) || 0;
+  
+  // Devoluciones y Restas automáticas
+  const returnOrders = orders.filter(o => o.status === 'No se pudo entregar');
+  const totalRefunded = returnOrders
+    .filter(o => o.returnStatus === 'Devuelto')
+    .reduce((sum, o) => sum + Number(o.total), 0);
 
-  const filteredOrders = selectedClientFilter === 'all' 
-    ? orders 
-    : orders.filter(o => (o.clientEmail === selectedClientFilter || o.clientName === selectedClientFilter));
+  const grandTotalDay = cashTotal + manualCaptureParsed - totalRefunded;
+
+  const handleCloseDay = () => {
+    setDayClosed(true);
+    setClosedDayData({
+      date: new Date().toLocaleDateString(),
+      totalClients: uniqueClients.length,
+      cashTotal,
+      captureTotal: manualCaptureParsed || captureSystemTotal,
+      totalRefunded,
+      grandTotal: grandTotalDay
+    });
+    alert("🔒 ¡Día cerrado con éxito! Los datos han sido consolidados.");
+  };
+
+  const uniqueClients = Array.from(new Set(orders.map(o => o.clientEmail || o.clientName))).filter(Boolean);
+  const filteredOrders = selectedClientFilter === 'all' ? orders : orders.filter(o => (o.clientEmail === selectedClientFilter || o.clientName === selectedClientFilter));
 
   return (
     <div className="min-h-screen flex flex-col bg-gray-100 text-gray-800">
@@ -603,9 +569,7 @@ export default function App() {
                 <h3 className="font-bold text-sm text-green-900 mb-1 flex items-center gap-2">
                   <Sparkles size={16} className="text-[#0b6b38]" /> Asistente de Pedidos IA
                 </h3>
-                <p className="text-xs text-gray-600 mb-2">
-                  Escribe lo que necesitas y la IA agregará lo disponible al carrito.
-                </p>
+                <p className="text-xs text-gray-600 mb-2">Escribe lo que necesitas y la IA agregará lo disponible al carrito.</p>
                 <div className="flex gap-2">
                   <input 
                     type="text"
@@ -669,11 +633,9 @@ export default function App() {
               </h2>
 
               {cart.length === 0 ? (
-                <div className="py-12 text-center text-gray-400 text-sm">
-                  El carrito está vacío.
-                </div>
+                <div className="py-12 text-center text-gray-400 text-sm">El carrito está vacío.</div>
               ) : (
-                <div className="space-y-3 flex-1 overflow-y-auto max-h-[250px] pr-1">
+                <div className="space-y-3 flex-1 overflow-y-auto max-h-[220px] pr-1">
                   {cart.map(item => (
                     <div key={item.id} className="flex justify-between items-center p-2 rounded-lg bg-gray-50 border">
                       <div className="text-xs">
@@ -692,24 +654,27 @@ export default function App() {
               )}
 
               <div className="mt-4 pt-3 border-t space-y-3">
-                {/* SELECTOR DE FECHA Y HORA DE ENTREGA */}
+                {/* CONTACTO */}
+                <div>
+                  <label className="text-[11px] font-bold text-gray-700 flex items-center gap-1 mb-1">
+                    <Phone size={12} className="text-[#0b6b38]" /> Teléfono de contacto (Entrega): *
+                  </label>
+                  <input 
+                    type="tel"
+                    value={clientPhone}
+                    onChange={e => setClientPhone(e.target.value)}
+                    placeholder="Ej. +58 412..."
+                    className="w-full border p-2 rounded text-xs bg-white focus:ring-2 focus:ring-[#0b6b38]"
+                  />
+                </div>
+
                 <div className="bg-gray-50 p-2.5 rounded-lg border text-xs space-y-2">
                   <p className="font-bold text-gray-700 flex items-center gap-1">
                     <Calendar size={14} className="text-[#0b6b38]" /> Fecha y hora preferida de entrega:
                   </p>
                   <div className="grid grid-cols-2 gap-2">
-                    <input 
-                      type="date"
-                      value={deliveryDate}
-                      onChange={e => setDeliveryDate(e.target.value)}
-                      className="border p-1 rounded text-xs bg-white"
-                    />
-                    <input 
-                      type="time"
-                      value={deliveryTime}
-                      onChange={e => setDeliveryTime(e.target.value)}
-                      className="border p-1 rounded text-xs bg-white"
-                    />
+                    <input type="date" value={deliveryDate} onChange={e => setDeliveryDate(e.target.value)} className="border p-1 rounded text-xs bg-white" />
+                    <input type="time" value={deliveryTime} onChange={e => setDeliveryTime(e.target.value)} className="border p-1 rounded text-xs bg-white" />
                   </div>
                 </div>
 
@@ -719,18 +684,8 @@ export default function App() {
                     disabled={locationLoading}
                     className="w-full bg-blue-50 border border-blue-200 text-blue-700 hover:bg-blue-100 font-medium py-2 rounded-lg text-xs flex items-center justify-center gap-2 transition"
                   >
-                    <MapPin size={15} /> 
-                    {locationLoading 
-                      ? 'Obteniendo GPS...' 
-                      : clientLocation 
-                        ? '✅ Ubicación obtenida' 
-                        : 'Compartir mi Ubicación Actual'}
+                    <MapPin size={15} /> {locationLoading ? 'Obteniendo GPS...' : clientLocation ? '✅ Ubicación obtenida' : 'Compartir mi Ubicación Actual'}
                   </button>
-                  {clientLocation && (
-                    <p className="text-[10px] text-green-700 text-center mt-1">
-                      Ubicación lista para adjuntar al pedido por WhatsApp.
-                    </p>
-                  )}
                 </div>
 
                 <div className="flex justify-between font-black text-sm text-gray-800">
@@ -758,10 +713,8 @@ export default function App() {
                 {companyHeader.name} <span className="text-[#fbc02d]">.</span>
               </div>
               <p className="text-xs font-mono text-gray-600">{companyHeader.rif}</p>
-              <p className="text-xs text-gray-500">{companyHeader.address}</p>
               <p className="text-xs text-gray-500">Tel: {companyHeader.phone}</p>
-              <p className="text-xs font-bold text-[#0b6b38] mt-2">Cliente: {user?.name}</p>
-              <p className="text-xs text-gray-600 mt-1">Entrega preferida: <strong>{deliveryDate || 'Lo antes posible'}</strong> a las <strong>{deliveryTime || 'Horario abierto'}</strong></p>
+              <p className="text-xs font-bold text-[#0b6b38] mt-2">Cliente: {user?.name} | Telf: {clientPhone}</p>
             </div>
 
             <table className="w-full text-xs mb-4">
@@ -783,13 +736,6 @@ export default function App() {
               </tbody>
             </table>
 
-            {clientLocation && (
-              <div className="bg-blue-50 border border-blue-200 p-2 rounded text-xs text-blue-900 mb-4 flex items-center gap-2">
-                <MapPin size={16} className="text-blue-600 flex-shrink-0" />
-                <span className="truncate">Ubicación GPS adjunta para la entrega</span>
-              </div>
-            )}
-
             <div className="border-t-2 border-dashed pt-3 text-right mb-6">
               <p className="text-xs text-gray-500 font-bold">TOTAL APROXIMADO A PAGAR:</p>
               <p className="text-2xl font-black text-[#0b6b38]">S/ {cartTotal.toFixed(2)}</p>
@@ -800,12 +746,13 @@ export default function App() {
                 href={`https://wa.me/584245719928?text=${encodeURIComponent(
                   `🛒 *NUEVO PEDIDO - PUNTO M*\n` +
                   `👤 *Cliente:* ${user ? user.name : 'Cliente'}\n` +
-                  `📅 *Fecha/Hora Preferida:* ${deliveryDate || 'Lo antes posible'} - ${deliveryTime || 'Horario abierto'}\n` +
+                  `📞 *Teléfono:* ${clientPhone}\n` +
+                  `📅 *Entrega:* ${deliveryDate || 'Lo antes posible'} - ${deliveryTime || 'Horario abierto'}\n` +
                   `-----------------------------------\n` +
-                  `📋 *Detalle del Pedido:*\n` + cart.map(item => `• ${item.qty}x ${item.name} - S/ ${(item.price * item.qty).toFixed(2)}`).join('\n') + `\n` +
+                  `📋 *Detalle:*\n` + cart.map(i => `• ${i.qty}x ${i.name} - S/ ${(i.price * i.qty).toFixed(2)}`).join('\n') + `\n` +
                   `-----------------------------------\n` +
-                  `💰 *Total aproximado a pagar:* S/ {cartTotal.toFixed(2)}\n` +
-                  (clientLocation ? `📍 *Ubicación del Cliente:*\n${clientLocation.mapUrl}` : '📍 *Ubicación:* No compartida')
+                  `💰 *Total:* S/ ${cartTotal.toFixed(2)}\n` +
+                  (clientLocation ? `📍 *Ubicación:*\n${clientLocation.mapUrl}` : '')
                 )}`}
                 target="_blank"
                 rel="noreferrer"
@@ -813,366 +760,377 @@ export default function App() {
               >
                 <Phone size={18} /> Enviar Pedido por WhatsApp (+58 424-5719928)
               </a>
-              <button 
-                onClick={() => setView('catalog')}
-                className="w-full bg-gray-200 text-gray-700 font-bold py-2 rounded-lg text-sm"
-              >
+              <button onClick={() => setView('catalog')} className="w-full bg-gray-200 text-gray-700 font-bold py-2 rounded-lg text-sm">
                 Volver al Catálogo
               </button>
             </div>
           </div>
         )}
 
-        {/* PANEL ADMIN */}
+        {/* PANEL ADMIN CON PESTAÑAS (PEDIDOS, CONTABILIDAD, DEVOLUCIONES) */}
         {view === 'admin' && userRole === 'admin' && (
           <div className="space-y-6 max-w-5xl mx-auto">
             <div className="bg-white p-6 rounded-2xl shadow border">
-              <h2 className="font-bold text-xl text-gray-800 mb-6 flex items-center gap-2 border-b pb-3">
-                <Settings className="text-[#0b6b38]" /> Panel de Administración PUNTO M
-              </h2>
-
-              {/* GESTIÓN DE PEDIDOS E HISTORIAL */}
-              <div className="mb-8">
-                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-3">
-                  <h3 className="font-bold text-base text-gray-800 flex items-center gap-2">
-                    <History size={18} className="text-[#0b6b38]" /> Historial de Pedidos y Gestión (Ordenados por Llegada / Hora)
-                  </h3>
-                  
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-bold text-gray-600">Filtrar por Cliente:</span>
-                    <select 
-                      value={selectedClientFilter} 
-                      onChange={e => setSelectedClientFilter(e.target.value)}
-                      className="border p-1.5 rounded text-xs bg-gray-50 focus:ring-2 focus:ring-[#0b6b38]"
-                    >
-                      <option value="all">Todos los Clientes ({orders.length})</option>
-                      {uniqueClients.map(client => (
-                        <option key={client} value={client}>{client}</option>
-                      ))}
-                    </select>
-                  </div>
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b pb-4 mb-6 gap-3">
+                <h2 className="font-bold text-xl text-gray-800 flex items-center gap-2">
+                  <Settings className="text-[#0b6b38]" /> Panel de Administración PUNTO M
+                </h2>
+                
+                {/* NAVEGACIÓN DE PESTAÑAS */}
+                <div className="flex bg-gray-100 p-1 rounded-xl text-xs font-bold gap-1">
+                  <button 
+                    onClick={() => setAdminSubTab('orders')}
+                    className={`px-3 py-2 rounded-lg transition ${adminSubTab === 'orders' ? 'bg-[#0b6b38] text-white shadow' : 'text-gray-600 hover:bg-gray-200'}`}
+                  >
+                    📦 Gestión de Pedidos
+                  </button>
+                  <button 
+                    onClick={() => setAdminSubTab('accounting')}
+                    className={`px-3 py-2 rounded-lg transition ${adminSubTab === 'accounting' ? 'bg-[#0b6b38] text-white shadow' : 'text-gray-600 hover:bg-gray-200'}`}
+                  >
+                    📊 Contabilidad del Día
+                  </button>
+                  <button 
+                    onClick={() => setAdminSubTab('returns')}
+                    className={`px-3 py-2 rounded-lg transition ${adminSubTab === 'returns' ? 'bg-[#0b6b38] text-white shadow' : 'text-gray-600 hover:bg-gray-200'}`}
+                  >
+                    🔄 Devoluciones ({orders.filter(o => o.status === 'No se pudo entregar').length})
+                  </button>
                 </div>
-
-                {filteredOrders.length === 0 ? (
-                  <p className="text-xs text-gray-400 bg-gray-50 p-4 rounded-lg text-center">No hay pedidos registrados con el filtro seleccionado.</p>
-                ) : (
-                  <div className="space-y-4 max-h-[450px] overflow-y-auto pr-1">
-                    {filteredOrders.map(order => (
-                      <div key={order.id} className="border p-4 rounded-xl bg-white shadow-sm flex flex-col md:flex-row justify-between gap-4 items-start md:items-center hover:border-green-300 transition">
-                        <div className="space-y-1 text-xs flex-1">
-                          <div className="flex items-center gap-2">
-                            <span className="font-bold text-sm text-gray-800">{order.clientName}</span>
-                            <span className={`px-2 py-0.5 rounded-full font-black text-[10px] ${
-                              order.status === 'Pendiente' ? 'bg-amber-100 text-amber-800 border border-amber-300' :
-                              order.status === 'Pagado' ? 'bg-blue-100 text-blue-800 border border-blue-300' :
-                              order.status === 'Completado' || order.status === 'Entregado' ? 'bg-green-100 text-green-800 border border-green-300' : 
-                              'bg-red-100 text-red-800 border border-red-300'
-                            }`}>
-                              {order.status}
-                            </span>
-                          </div>
-                          <p className="text-gray-500">Email: {order.clientEmail || 'No disponible'}</p>
-                          <p className="text-gray-700 font-bold flex items-center gap-1">
-                            <Calendar size={12} className="text-[#0b6b38]" /> Entrega: {order.deliveryDate || 'N/A'} a las {order.deliveryTime || 'N/A'}
-                          </p>
-                          <p className="text-gray-600 font-medium">Items: {order.items ? order.items.map(i => `${i.qty}x ${i.name}`).join(', ') : 'Sin detalle'}</p>
-                          <p className="font-bold text-green-800 text-xs">Total aprox: S/ {Number(order.total).toFixed(2)}</p>
-                          
-                          {order.paymentMethod && (
-                            <p className="text-blue-700 font-semibold text-[11px]">
-                              💳 Método de Pago: {order.paymentMethod}
-                            </p>
-                          )}
-
-                          {order.paymentProof && (
-                            <button 
-                              onClick={() => setPreviewImage(order.paymentProof)}
-                              className="text-xs text-indigo-600 hover:text-indigo-800 font-bold flex items-center gap-1 underline mt-1"
-                            >
-                              <Eye size={14} /> Ver Capture de Pago Subido
-                            </button>
-                          )}
-
-                          {order.failReason && (
-                            <p className="text-red-600 font-bold bg-red-50 p-1.5 rounded border border-red-200 mt-1">
-                              ⚠️ Motivo no entrega: {order.failReason}
-                            </p>
-                          )}
-
-                          {order.location && (
-                            <p className="text-blue-600 flex items-center gap-1 text-[11px]">
-                              <MapPin size={12} />
-                              <a href={order.location.mapUrl} target="_blank" rel="noreferrer" className="underline font-bold">
-                                Ver Ubicación GPS en Google Maps
-                              </a>
-                            </p>
-                          )}
-                        </div>
-
-                        <div className="flex flex-wrap items-center gap-2">
-                          <button 
-                            onClick={() => handlePrintOrder(order)}
-                            className="bg-gray-800 hover:bg-black text-white p-2 rounded-lg text-xs flex items-center gap-1 font-bold"
-                            title="Imprimir Pedido"
-                          >
-                            <Printer size={14} /> Imprimir
-                          </button>
-                          
-                          {/* BOTÓN: ABRIR MODAL DE PAGO (EFECTIVO O CAPTURE) */}
-                          {order.status === 'Pendiente' && (
-                            <button 
-                              onClick={() => {
-                                setPayOrderId(order.id);
-                                setPayModalOpen(true);
-                              }}
-                              className="bg-blue-600 hover:bg-blue-700 text-white p-2 rounded-lg text-xs font-bold flex items-center gap-1"
-                              title="Marcar como Pagado"
-                            >
-                              <CreditCard size={14} /> Marcar Pagado
-                            </button>
-                          )}
-
-                          {/* BOTONES DISPONIBLES AL ESTAR PAGADO */}
-                          {order.status === 'Pagado' && (
-                            <>
-                              <button 
-                                onClick={() => handleUpdateOrderStatus(order.id, 'Entregado')}
-                                className="bg-green-600 hover:bg-green-700 text-white p-2 rounded-lg text-xs font-bold flex items-center gap-1"
-                                title="Marcar como Completado / Entregado"
-                              >
-                                <CheckCircle size={14} /> Completar (Entregado)
-                              </button>
-
-                              <button 
-                                onClick={() => {
-                                  setFailOrderId(order.id);
-                                  setFailModalOpen(true);
-                                }}
-                                className="bg-amber-600 hover:bg-amber-700 text-white p-2 rounded-lg text-xs font-bold flex items-center gap-1"
-                                title="No se pudo entregar"
-                              >
-                                <AlertTriangle size={14} /> No se pudo entregar
-                              </button>
-                            </>
-                          )}
-
-                          {order.status !== 'Entregado' && order.status !== 'Cancelado' && order.status !== 'No se pudo entregar' && (
-                            <button 
-                              onClick={() => handleUpdateOrderStatus(order.id, 'Cancelado')}
-                              className="bg-red-500 hover:bg-red-600 text-white p-2 rounded-lg text-xs font-bold flex items-center gap-1"
-                              title="Cancelar Pedido"
-                            >
-                              <XCircle size={14} /> Cancelar
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
               </div>
 
+              {/* PESTAÑA 1: GESTIÓN DE PEDIDOS */}
+              {adminSubTab === 'orders' && (
+                <div className="mb-8 space-y-4">
+                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                    <h3 className="font-bold text-base text-gray-800 flex items-center gap-2">
+                      <History size={18} className="text-[#0b6b38]" /> Historial e Ítems por Cliente
+                    </h3>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-bold text-gray-600">Filtrar Cliente:</span>
+                      <select 
+                        value={selectedClientFilter} 
+                        onChange={e => setSelectedClientFilter(e.target.value)}
+                        className="border p-1.5 rounded text-xs bg-gray-50 focus:ring-2 focus:ring-[#0b6b38]"
+                      >
+                        <option value="all">Todos ({orders.length})</option>
+                        {uniqueClients.map(c => <option key={c} value={c}>{c}</option>)}
+                      </select>
+                    </div>
+                  </div>
+
+                  {filteredOrders.length === 0 ? (
+                    <p className="text-xs text-gray-400 bg-gray-50 p-4 rounded-lg text-center">No hay pedidos registrados.</p>
+                  ) : (
+                    <div className="space-y-4 max-h-[450px] overflow-y-auto pr-1">
+                      {filteredOrders.map(order => (
+                        <div key={order.id} className="border p-4 rounded-xl bg-white shadow-sm flex flex-col md:flex-row justify-between gap-4 items-start md:items-center hover:border-green-300 transition">
+                          <div className="space-y-1 text-xs flex-1">
+                            <div className="flex items-center gap-2">
+                              <span className="font-bold text-sm text-gray-800">{order.clientName}</span>
+                              <span className={`px-2 py-0.5 rounded-full font-black text-[10px] ${
+                                order.status === 'Pendiente' ? 'bg-amber-100 text-amber-800 border border-amber-300' :
+                                order.status === 'Pagado' ? 'bg-blue-100 text-blue-800 border border-blue-300' :
+                                order.status === 'Completado' || order.status === 'Entregado' ? 'bg-green-100 text-green-800 border border-green-300' : 
+                                'bg-red-100 text-red-800 border border-red-300'
+                              }`}>{order.status}</span>
+                            </div>
+                            <p className="text-gray-500">📞 Telf: {order.clientPhone || 'No registrado'} | Email: {order.clientEmail || 'N/A'}</p>
+                            <p className="text-gray-700 font-bold flex items-center gap-1">
+                              <Calendar size={12} className="text-[#0b6b38]" /> Entrega: {order.deliveryDate || 'N/A'} a las {order.deliveryTime || 'N/A'}
+                            </p>
+                            <p className="text-gray-600 font-medium">Items: {order.items ? order.items.map(i => `${i.qty}x ${i.name}`).join(', ') : 'Sin detalle'}</p>
+                            <p className="font-bold text-green-800 text-xs">Total aprox: S/ {Number(order.total).toFixed(2)}</p>
+                            
+                            {order.paymentMethod && <p className="text-blue-700 font-semibold text-[11px]">💳 Pago: {order.paymentMethod}</p>}
+                            {order.paymentProof && (
+                              <button onClick={() => setPreviewImage(order.paymentProof)} className="text-xs text-indigo-600 hover:underline font-bold flex items-center gap-1 mt-1">
+                                <Eye size={14} /> Ver Capture de Pago
+                              </button>
+                            )}
+                            {order.failReason && <p className="text-red-600 font-bold bg-red-50 p-1.5 rounded border border-red-200 mt-1">⚠️ No entrega: {order.failReason}</p>}
+                          </div>
+
+                          <div className="flex flex-wrap items-center gap-2">
+                            <button onClick={() => handlePrintOrder(order)} className="bg-gray-800 hover:bg-black text-white p-2 rounded-lg text-xs flex items-center gap-1 font-bold">
+                              <Printer size={14} /> Imprimir
+                            </button>
+                            
+                            {order.status === 'Pendiente' && (
+                              <button onClick={() => { setPayOrderId(order.id); setPayModalOpen(true); }} className="bg-blue-600 hover:bg-blue-700 text-white p-2 rounded-lg text-xs font-bold flex items-center gap-1">
+                                <CreditCard size={14} /> Marcar Pagado
+                              </button>
+                            )}
+
+                            {order.status === 'Pagado' && (
+                              <>
+                                <button onClick={() => handleUpdateOrderStatus(order.id, 'Entregado')} className="bg-green-600 hover:bg-green-700 text-white p-2 rounded-lg text-xs font-bold flex items-center gap-1">
+                                  <CheckCircle size={14} /> Completar (Entregado)
+                                </button>
+                                <button onClick={() => { setFailOrderId(order.id); setFailModalOpen(true); }} className="bg-amber-600 hover:bg-amber-700 text-white p-2 rounded-lg text-xs font-bold flex items-center gap-1">
+                                  <AlertTriangle size={14} /> No se pudo entregar
+                                </button>
+                              </>
+                            )}
+
+                            {order.status !== 'Entregado' && order.status !== 'Cancelado' && order.status !== 'No se pudo entregar' && (
+                              <button onClick={() => handleUpdateOrderStatus(order.id, 'Cancelado')} className="bg-red-500 hover:bg-red-600 text-white p-2 rounded-lg text-xs font-bold flex items-center gap-1">
+                                <XCircle size={14} /> Cancelar
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* PESTAÑA 2: CONTABILIDAD */}
+              {adminSubTab === 'accounting' && (
+                <div className="space-y-6">
+                  <div className="bg-green-50 border border-green-200 p-5 rounded-2xl flex flex-col md:flex-row justify-between items-center gap-4">
+                    <div>
+                      <h3 className="font-black text-lg text-green-900 flex items-center gap-2">
+                        <PieChart size={22} className="text-[#0b6b38]" /> Resumen Contable Diario
+                      </h3>
+                      <p className="text-xs text-green-800 mt-1">Cálculo de ingresos en efectivo, captures y deducción de devoluciones.</p>
+                    </div>
+
+                    <button 
+                      onClick={handleCloseDay}
+                      disabled={dayClosed}
+                      className="bg-red-600 hover:bg-red-700 disabled:bg-gray-400 text-white font-black px-5 py-3 rounded-xl text-xs flex items-center gap-2 shadow transition"
+                    >
+                      <Lock size={16} /> {dayClosed ? 'Día Cerrado' : 'Cerrar Día'}
+                    </button>
+                  </div>
+
+                  {dayClosed && closedDayData && (
+                    <div className="bg-amber-50 border border-amber-300 p-4 rounded-xl text-xs text-amber-900 space-y-1">
+                      <p className="font-bold text-sm">🔒 Cierre de Día Realizado ({closedDayData.date})</p>
+                      <p>• Clientes atendidos: {closedDayData.totalClients}</p>
+                      <p>• Total Efectivo: S/ {closedDayData.cashTotal.toFixed(2)}</p>
+                      <p>• Total Captures: S/ {closedDayData.captureTotal.toFixed(2)}</p>
+                      <p>• Total Restado por Devoluciones: - S/ {closedDayData.totalRefunded.toFixed(2)}</p>
+                      <p className="font-black text-base text-green-800 mt-2">Gran Total Final del Día: S/ {closedDayData.grandTotal.toFixed(2)}</p>
+                    </div>
+                  )}
+
+                  {/* DESGLOSE POR CLIENTE */}
+                  <div className="border rounded-xl p-4 bg-gray-50 space-y-3">
+                    <h4 className="font-bold text-sm text-gray-800">Compras y Pagos Organizados por Clientes (Pagados / Entregados)</h4>
+                    {paidOrders.length === 0 ? (
+                      <p className="text-xs text-gray-400">No hay pagos registrados hoy.</p>
+                    ) : (
+                      <div className="space-y-2 max-h-[250px] overflow-y-auto">
+                        {uniqueClients.map(client => {
+                          const clientOrders = paidOrders.filter(o => o.clientEmail === client || o.clientName === client);
+                          if (clientOrders.length === 0) return null;
+                          const clientTotal = clientOrders.reduce((sum, o) => sum + Number(o.total), 0);
+                          return (
+                            <div key={client} className="bg-white p-3 rounded-lg border text-xs flex justify-between items-center">
+                              <div>
+                                <p className="font-bold text-gray-800">{clientOrders[0].clientName} ({client})</p>
+                                <p className="text-gray-500">{clientOrders.length} pedido(s) pagados | Métodos: {clientOrders.map(o => o.paymentMethod).join(', ')}</p>
+                              </div>
+                              <span className="font-black text-green-800 text-sm">S/ {clientTotal.toFixed(2)}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* TOTALES Y CAPTURES MANUALES */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="border p-4 rounded-xl bg-white space-y-2 text-xs">
+                      <p className="font-bold text-gray-700">💵 Total Pagos en Efectivo:</p>
+                      <p className="text-xl font-black text-green-700">S/ {cashTotal.toFixed(2)}</p>
+                      <p className="text-[11px] text-gray-500">Suma automática de todos los pedidos marcados en efectivo.</p>
+                    </div>
+
+                    <div className="border p-4 rounded-xl bg-white space-y-2 text-xs">
+                      <p className="font-bold text-gray-700">📥 Sumatoria Manual de Captures de Pago:</p>
+                      <div className="flex gap-2">
+                        <input 
+                          type="number" 
+                          step="0.01"
+                          value={manualCaptureSum}
+                          onChange={e => setManualCaptureSum(e.target.value)}
+                          placeholder="Ingrese monto total de captures..."
+                          className="border p-2 rounded flex-1 text-xs bg-gray-50"
+                        />
+                      </div>
+                      <p className="text-[11px] text-gray-500">Sistema automático por capture: S/ {captureSystemTotal.toFixed(2)}</p>
+                    </div>
+                  </div>
+
+                  {/* GRAN TOTAL */}
+                  <div className="bg-[#0b6b38] text-white p-6 rounded-2xl shadow flex justify-between items-center">
+                    <div>
+                      <p className="text-xs uppercase tracking-widest text-green-200 font-bold">Sumatoria Total Final del Día</p>
+                      <p className="text-3xl font-black mt-1">S/ {grandTotalDay.toFixed(2)}</p>
+                      {totalRefunded > 0 && <p className="text-xs text-amber-200 mt-1">(Incluye -S/ {totalRefunded.toFixed(2)} restados por devoluciones)</p>}
+                    </div>
+                    <DollarSign size={40} className="text-[#fbc02d]" />
+                  </div>
+                </div>
+              )}
+
+              {/* PESTAÑA 3: DEVOLUCIONES */}
+              {adminSubTab === 'returns' && (
+                <div className="space-y-4">
+                  <h3 className="font-bold text-base text-gray-800 flex items-center gap-2">
+                    <RefreshCw size={18} className="text-red-600" /> Pedidos No Entregados y Gestión de Devoluciones
+                  </h3>
+
+                  {returnOrders.length === 0 ? (
+                    <p className="text-xs text-gray-400 bg-gray-50 p-4 rounded-lg text-center">No hay devoluciones registradas.</p>
+                  ) : (
+                    <div className="space-y-3 max-h-[450px] overflow-y-auto">
+                      {returnOrders.map(order => (
+                        <div key={order.id} className="border border-red-200 p-4 rounded-xl bg-red-50 shadow-sm flex flex-col md:flex-row justify-between gap-4 items-start md:items-center">
+                          <div className="space-y-1 text-xs flex-1">
+                            <div className="flex items-center gap-2">
+                              <span className="font-bold text-sm text-gray-800">{order.clientName}</span>
+                              <span className={`px-2 py-0.5 rounded-full font-black text-[10px] ${order.returnStatus === 'Devuelto' ? 'bg-green-100 text-green-800' : 'bg-amber-100 text-amber-800'}`}>
+                                {order.returnStatus || 'Pendiente Devolución'}
+                              </span>
+                            </div>
+                            <p className="text-red-700 font-bold">⚠️ Motivo: {order.failReason}</p>
+                            <p className="text-gray-600">Monto a devolver: <strong>S/ {Number(order.total).toFixed(2)}</strong></p>
+                            
+                            {order.returnProof && (
+                              <button onClick={() => setPreviewImage(order.returnProof)} className="text-xs text-indigo-600 hover:underline font-bold flex items-center gap-1 mt-1">
+                                <Eye size={14} /> Ver Capture del Reembolso Enviado
+                              </button>
+                            )}
+                          </div>
+
+                          <div>
+                            {order.returnStatus !== 'Devuelto' ? (
+                              <button 
+                                onClick={() => { setReturnOrderId(order.id); setReturnModalOpen(true); }}
+                                className="bg-red-600 hover:bg-red-700 text-white font-bold px-4 py-2 rounded-lg text-xs shadow flex items-center gap-1"
+                              >
+                                <CreditCard size={14} /> Marcar como Devuelto y Subir Capture
+                              </button>
+                            ) : (
+                              <span className="text-xs font-bold text-green-700 bg-green-100 px-3 py-1.5 rounded-lg border border-green-300">
+                                ✅ Dinero Devuelto (Restado del día)
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* IMPORTADOR GEMINI */}
-              <div className="bg-green-50 p-5 rounded-xl border border-green-200 mb-6">
+              <div className="bg-green-50 p-5 rounded-xl border border-green-200 mt-8 mb-6">
                 <h3 className="font-bold text-sm text-green-900 mb-2 flex items-center gap-2">
                   <Sparkles size={18} className="text-[#0b6b38]" /> Importador Inteligente Gemini IA
                 </h3>
-                <p className="text-xs text-green-800 mb-3">
-                  Pega el texto de tu factura o inventario para guardarlo en la base de datos Firestore.
-                </p>
                 <textarea 
-                  rows="4"
+                  rows="3"
                   value={aiFileText}
                   onChange={e => setAiFileText(e.target.value)}
-                  placeholder="Ejemplo:
-Arroz Extra 1kg - 4.50 S/
-Aceite Vegetal 1L - 8.90 S/
-Azúcar Rubia 1kg - 3.80 S/"
-                  className="w-full border p-3 rounded-lg text-xs mb-3 focus:ring-2 focus:ring-[#0b6b38] bg-white"
+                  placeholder="Pega el texto de inventario..."
+                  className="w-full border p-2 rounded-lg text-xs mb-2 bg-white"
                 ></textarea>
-                
-                <button 
-                  onClick={handleProcessAiFileWithGemini}
-                  disabled={isProcessingFile}
-                  className="bg-[#0b6b38] hover:bg-[#074825] disabled:bg-gray-400 text-white font-bold px-5 py-2.5 rounded-lg text-xs flex items-center gap-2 transition shadow"
-                >
-                  <Upload size={14} /> {isProcessingFile ? 'Analizando con Gemini...' : 'Analizar Documento y Actualizar Firestore'}
+                <button onClick={handleProcessAiFileWithGemini} disabled={isProcessingFile} className="bg-[#0b6b38] text-white font-bold px-4 py-2 rounded-lg text-xs">
+                  {isProcessingFile ? 'Analizando...' : 'Analizar e Importar'}
                 </button>
-
-                {aiStatusMessage && (
-                  <p className="mt-3 text-xs font-bold text-green-900 animate-pulse bg-white p-2 rounded border border-green-300">
-                    {aiStatusMessage}
-                  </p>
-                )}
               </div>
 
               {/* REGISTRO MANUAL */}
               <div className="border-t pt-4">
                 <h3 className="font-bold text-sm text-gray-700 mb-3">Agregar Producto Manual</h3>
                 <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 mb-3">
-                  <input 
-                    type="text" 
-                    placeholder="Nombre Producto"
-                    value={newProduct.name}
-                    onChange={e => setNewProduct({...newProduct, name: e.target.value})}
-                    className="border p-2 rounded text-xs"
-                  />
-                  <input 
-                    type="number" 
-                    placeholder="Precio en S/"
-                    value={newProduct.price}
-                    onChange={e => setNewProduct({...newProduct, price: e.target.value})}
-                    className="border p-2 rounded text-xs"
-                  />
-                  <input 
-                    type="text" 
-                    placeholder="URL Imagen (Web)"
-                    value={newProduct.image}
-                    onChange={e => setNewProduct({...newProduct, image: e.target.value})}
-                    className="border p-2 rounded text-xs"
-                  />
-                  <button 
-                    onClick={async () => {
-                      if (!newProduct.name || !newProduct.price) return;
-                      await addDoc(collection(db, 'products'), {
-                        name: newProduct.name,
-                        price: parseFloat(newProduct.price),
-                        category: 'Viveres',
-                        image: newProduct.image || 'https://images.unsplash.com/photo-1542838132-92c53300491e?w=300',
-                        createdAt: new Date()
-                      });
-                      setNewProduct({ name: '', price: '', category: 'Viveres', image: '' });
-                      alert("Producto guardado en Firestore.");
-                    }}
-                    className="bg-[#0b6b38] text-white font-bold p-2 rounded text-xs hover:bg-[#074825]"
-                  >
-                    Guardar Manual
-                  </button>
+                  <input type="text" placeholder="Nombre" value={newProduct.name} onChange={e => setNewProduct({...newProduct, name: e.target.value})} className="border p-2 rounded text-xs" />
+                  <input type="number" placeholder="Precio S/" value={newProduct.price} onChange={e => setNewProduct({...newProduct, price: e.target.value})} className="border p-2 rounded text-xs" />
+                  <input type="text" placeholder="URL Imagen" value={newProduct.image} onChange={e => setNewProduct({...newProduct, image: e.target.value})} className="border p-2 rounded text-xs" />
+                  <button onClick={async () => {
+                    if (!newProduct.name || !newProduct.price) return;
+                    await addDoc(collection(db, 'products'), {
+                      name: newProduct.name, price: parseFloat(newProduct.price), category: 'Viveres', image: newProduct.image || 'https://images.unsplash.com/photo-1542838132-92c53300491e?w=300', createdAt: new Date()
+                    });
+                    setNewProduct({ name: '', price: '', category: 'Viveres', image: '' });
+                    alert("Guardado.");
+                  }} className="bg-[#0b6b38] text-white font-bold p-2 rounded text-xs">Guardar</button>
                 </div>
-
-                <div className="flex items-center gap-2">
-                  <label className="cursor-pointer bg-gray-200 hover:bg-gray-300 text-gray-800 text-xs font-bold py-1.5 px-3 rounded inline-flex items-center gap-1 transition">
-                    <ImageIcon size={14} />
-                    <span>Subir imagen desde mi PC</span>
-                    <input type="file" accept="image/*" onChange={handleImageFileUpload} className="hidden" />
-                  </label>
-                  {newProduct.image && newProduct.image.startsWith('data:image') && (
-                    <span className="text-[11px] text-green-700 font-bold">✅ Imagen cargada desde PC</span>
-                  )}
-                </div>
+                <label className="cursor-pointer bg-gray-200 text-gray-800 text-xs font-bold py-1.5 px-3 rounded inline-flex items-center gap-1">
+                  <ImageIcon size={14} /> Subir imagen desde PC
+                  <input type="file" accept="image/*" onChange={handleImageFileUpload} className="hidden" />
+                </label>
               </div>
 
             </div>
           </div>
         )}
 
-        {/* MODAL PARA SELECCIONAR MÉTODO DE PAGO (EFECTIVO O CAPTURE) */}
+        {/* MODAL PAGO */}
         {payModalOpen && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
             <div className="bg-white p-6 rounded-2xl max-w-md w-full shadow-2xl space-y-4">
-              <h3 className="font-bold text-base text-blue-700 flex items-center gap-2">
-                <CreditCard size={20} /> Registrar Pago del Pedido
-              </h3>
-              <p className="text-xs text-gray-600">
-                Selecciona cómo realizó el pago el cliente:
-              </p>
-
-              <div className="space-y-3 pt-2">
-                <button 
-                  onClick={handlePayCash}
-                  className="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-xl text-xs shadow flex items-center justify-center gap-2"
-                >
-                  💵 Pagó en Efectivo
-                </button>
-
-                <div className="border-t pt-3 space-y-2">
-                  <p className="text-xs font-bold text-gray-700">Subir Capture de Transferencia / Pago Móvil:</p>
-                  <label className="cursor-pointer bg-gray-100 hover:bg-gray-200 border-2 border-dashed border-gray-300 text-gray-800 text-xs font-bold py-3 px-3 rounded-xl flex flex-col items-center justify-center gap-1 transition">
-                    <Upload size={18} className="text-gray-500" />
-                    <span>{paymentProof ? '✅ Capture seleccionado (Cambiar)' : 'Seleccionar imagen de capture'}</span>
-                    <input type="file" accept="image/*" onChange={handlePaymentProofUpload} className="hidden" />
-                  </label>
-
-                  {paymentProof && (
-                    <button 
-                      onClick={handlePayCapture}
-                      className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl text-xs shadow flex items-center justify-center gap-2 mt-2"
-                    >
-                      📤 Guardar con Capture de Pago
-                    </button>
-                  )}
-                </div>
+              <h3 className="font-bold text-base text-blue-700 flex items-center gap-2"><CreditCard size={20} /> Registrar Pago</h3>
+              <button onClick={handlePayCash} className="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-xl text-xs shadow">💵 Pagó en Efectivo</button>
+              <div className="border-t pt-3 space-y-2">
+                <p className="text-xs font-bold text-gray-700">Subir Capture:</p>
+                <label className="cursor-pointer bg-gray-100 border-2 border-dashed border-gray-300 text-xs font-bold py-3 px-3 rounded-xl flex flex-col items-center justify-center">
+                  <Upload size={18} /> {paymentProof ? '✅ Capture seleccionado' : 'Seleccionar imagen'}
+                  <input type="file" accept="image/*" onChange={handlePaymentProofUpload} className="hidden" />
+                </label>
+                {paymentProof && <button onClick={handlePayCapture} className="w-full bg-blue-600 text-white font-bold py-3 rounded-xl text-xs shadow mt-2">📤 Guardar con Capture</button>}
               </div>
-
-              <div className="flex justify-end pt-2">
-                <button 
-                  onClick={() => {
-                    setPayModalOpen(false);
-                    setPayOrderId(null);
-                    setPaymentProof('');
-                  }}
-                  className="bg-gray-200 hover:bg-gray-300 text-gray-700 font-bold px-4 py-2 rounded-lg text-xs"
-                >
-                  Cancelar
-                </button>
-              </div>
+              <button onClick={() => { setPayModalOpen(false); setPaymentProof(''); }} className="w-full bg-gray-200 text-gray-700 font-bold py-2 rounded-lg text-xs">Cancelar</button>
             </div>
           </div>
         )}
 
-        {/* MODAL PARA MOTIVO DE NO ENTREGA */}
+        {/* MODAL FALLO */}
         {failModalOpen && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
             <div className="bg-white p-6 rounded-2xl max-w-md w-full shadow-2xl space-y-4">
-              <h3 className="font-bold text-base text-red-600 flex items-center gap-2">
-                <AlertTriangle size={20} /> Explicación de No Entrega
-              </h3>
-              <p className="text-xs text-gray-600">
-                Por favor, escribe el motivo por el cual no se pudo completar la entrega de este pedido:
-              </p>
-              <textarea 
-                rows="3"
-                value={failReason}
-                onChange={e => setFailReason(e.target.value)}
-                placeholder="Ej. Cliente ausente, dirección incorrecta, zona inaccesible..."
-                className="w-full border p-3 rounded-lg text-xs focus:ring-2 focus:ring-red-500"
-              ></textarea>
-              <div className="flex justify-end gap-2 pt-2">
-                <button 
-                  onClick={() => {
-                    setFailModalOpen(false);
-                    setFailReason('');
-                    setFailOrderId(null);
-                  }}
-                  className="bg-gray-200 hover:bg-gray-300 text-gray-700 font-bold px-4 py-2 rounded-lg text-xs"
-                >
-                  Cancelar
-                </button>
-                <button 
-                  onClick={handleSaveFailReason}
-                  className="bg-red-600 hover:bg-red-700 text-white font-bold px-4 py-2 rounded-lg text-xs shadow"
-                >
-                  Guardar Motivo
-                </button>
+              <h3 className="font-bold text-base text-red-600 flex items-center gap-2"><AlertTriangle size={20} /> Explicación de No Entrega</h3>
+              <textarea rows="3" value={failReason} onChange={e => setFailReason(e.target.value)} placeholder="Motivo..." className="w-full border p-3 rounded-lg text-xs"></textarea>
+              <div className="flex justify-end gap-2">
+                <button onClick={() => setFailModalOpen(false)} className="bg-gray-200 px-4 py-2 rounded-lg text-xs">Cancelar</button>
+                <button onClick={handleSaveFailReason} className="bg-red-600 text-white px-4 py-2 rounded-lg text-xs font-bold">Guardar</button>
               </div>
             </div>
           </div>
         )}
 
-        {/* MODAL PARA VER CAPTURE EN GRANDE */}
+        {/* MODAL DEVOLUCIÓN */}
+        {returnModalOpen && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white p-6 rounded-2xl max-w-md w-full shadow-2xl space-y-4">
+              <h3 className="font-bold text-base text-green-700 flex items-center gap-2"><RefreshCw size={20} /> Devolución de Dinero</h3>
+              <p className="text-xs text-gray-600">Sube el capture del reembolso enviado al cliente para restarlo automáticamente del día:</p>
+              <label className="cursor-pointer bg-gray-100 border-2 border-dashed border-gray-300 text-xs font-bold py-3 px-3 rounded-xl flex flex-col items-center justify-center">
+                <Upload size={18} /> {returnProof ? '✅ Capture de devolución listo' : 'Subir capture de transferencia de devolución'}
+                <input type="file" accept="image/*" onChange={handleReturnProofUpload} className="hidden" />
+              </label>
+              <div className="flex justify-end gap-2">
+                <button onClick={() => setReturnModalOpen(false)} className="bg-gray-200 px-4 py-2 rounded-lg text-xs">Cancelar</button>
+                <button onClick={handleSaveReturnProof} className="bg-green-600 text-white px-4 py-2 rounded-lg text-xs font-bold">Confirmar Devolución</button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* PREVIEW IMAGEN */}
         {previewImage && (
           <div className="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-50 p-4" onClick={() => setPreviewImage(null)}>
             <div className="bg-white p-4 rounded-2xl max-w-lg w-full shadow-2xl relative space-y-3">
-              <h3 className="font-bold text-sm text-gray-800 text-center">Comprobante de Pago (Capture)</h3>
               <div className="flex justify-center max-h-[70vh] overflow-auto">
-                <img src={previewImage} alt="Capture de Pago" className="max-w-full rounded-lg object-contain" />
+                <img src={previewImage} alt="Comprobante" className="max-w-full rounded-lg object-contain" />
               </div>
-              <button 
-                onClick={() => setPreviewImage(null)}
-                className="w-full bg-gray-800 text-white font-bold py-2 rounded-lg text-xs"
-              >
-                Cerrar Vista Previa
-              </button>
+              <button onClick={() => setPreviewImage(null)} className="w-full bg-gray-800 text-white font-bold py-2 rounded-lg text-xs">Cerrar</button>
             </div>
           </div>
         )}
