@@ -36,7 +36,9 @@ import {
   Unlock,
   Users,
   Award,
-  AlertCircle
+  AlertCircle,
+  RotateCcw as ReturnIcon,
+  Banknote
 } from 'lucide-react';
 import { auth, googleProvider, db, signInWithPopup, signOut } from './firebase';
 import { 
@@ -50,8 +52,6 @@ import {
   onSnapshot,
   updateDoc
 } from 'firebase/firestore';
-
-const GEMINI_API_KEY = "AQ.Ab8RN6I6YA6ngJ0jFh7QWo6Fusf2aHbSLp3vbMahAu5WrUJu4A"; 
 
 const BASE_PRODUCTS = [
   { name: 'Harina de Trigo 1kg', price: 4.50, category: 'Viveres', image: 'https://images.unsplash.com/photo-1574323347407-f5e1ad6d020b?w=300' },
@@ -78,7 +78,8 @@ export default function App() {
   const [clientPhone, setClientPhone] = useState('');
   const [paymentPreference, setPaymentPreference] = useState('Efectivo');
   const [paymentTiming, setPaymentTiming] = useState('Contra Entrega');
-  const [creditTerm, setCreditTerm] = useState('7 dias'); // '7 dias', '15 dias', '1 mes'
+  const [creditTerm, setCreditTerm] = useState('7 dias');
+  const [cashPayAmount, setCashPayAmount] = useState(''); // Monto con el que paga el cliente en efectivo
 
   const [currentOrderId, setCurrentOrderId] = useState(null);
   const [whatsappSent, setWhatsappSent] = useState(false);
@@ -104,6 +105,19 @@ export default function App() {
   const [corruptOrderId, setCorruptOrderId] = useState(null);
   const [corruptReason, setCorruptReason] = useState('');
   const [corruptPhoto, setCorruptPhoto] = useState('');
+
+  // Estados para devolución de productos
+  const [productReturnModalOpen, setProductReturnModalOpen] = useState(false);
+  const [productReturnOrderId, setProductReturnOrderId] = useState(null);
+  const [returnedItemsSummary, setReturnedItemsSummary] = useState('');
+  const [manualProductValue, setManualProductValue] = useState('');
+  const [returnedProductsPhoto, setReturnedProductsPhoto] = useState('');
+
+  // Estados para devolución/diferencia de dinero y vuelto en Admin
+  const [changeModalOpen, setChangeModalOpen] = useState(false);
+  const [changeOrderId, setChangeOrderId] = useState(null);
+  const [changeAmountGiven, setChangeAmountGiven] = useState('');
+  const [changeProofPhoto, setChangeProofPhoto] = useState('');
 
   const [returnModalOpen, setReturnModalOpen] = useState(false);
   const [returnOrderId, setReturnOrderId] = useState(null);
@@ -320,6 +334,7 @@ export default function App() {
   };
 
   const cartTotal = cart.reduce((sum, item) => sum + (item.price * item.qty), 0);
+  const calculatedChange = cashPayAmount ? Math.max(0, parseFloat(cashPayAmount) - cartTotal) : 0;
 
   const handleGetLocation = () => {
     if (!navigator.geolocation) return;
@@ -355,7 +370,6 @@ export default function App() {
 
     if (cart.length === 0) return;
 
-    // Calcular fecha de vencimiento si es crédito
     let creditDueDate = null;
     if (paymentPreference === 'Crédito') {
       const now = new Date();
@@ -373,6 +387,9 @@ export default function App() {
       items: cart,
       approxTotal: cartTotal,
       total: cartTotal,
+      originalTotal: cartTotal,
+      cashPayAmount: paymentPreference === 'Efectivo' ? parseFloat(cashPayAmount || cartTotal) : 0,
+      expectedChange: paymentPreference === 'Efectivo' ? calculatedChange : 0,
       hasExactAmount: false,
       location: clientLocation || null,
       deliveryDate: deliveryDate,
@@ -389,6 +406,9 @@ export default function App() {
       isCorrupt: false,
       corruptReason: '',
       corruptPhoto: '',
+      returnedProductsList: [],
+      returnedProductsPhoto: '',
+      changeGivenRecord: null,
       failReason: '',
       returnStatus: 'No aplica',
       returnProof: '',
@@ -437,6 +457,24 @@ export default function App() {
     if (file) {
       const reader = new FileReader();
       reader.onloadend = () => setCorruptPhoto(reader.result);
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleReturnedProductsPhotoUpload = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => setReturnedProductsPhoto(reader.result);
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleChangeProofPhotoUpload = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => setChangeProofPhoto(reader.result);
       reader.readAsDataURL(file);
     }
   };
@@ -551,6 +589,73 @@ export default function App() {
     }
   };
 
+  const handleSaveProductReturn = async () => {
+    const valueDeduction = parseFloat(manualProductValue);
+    if (isNaN(valueDeduction) || valueDeduction <= 0) {
+      alert("⚠️ Ingrese un valor total del producto válido.");
+      return;
+    }
+    if (!returnedProductsPhoto) {
+      alert("⚠️ Adjunte la foto de los productos devueltos.");
+      return;
+    }
+
+    try {
+      const orderRef = doc(db, 'orders', productReturnOrderId);
+      const orderSnap = await getDoc(orderRef);
+      if (!orderSnap.exists()) return;
+      const orderData = orderSnap.data();
+
+      const currentTotal = Number(orderData.total || orderData.approxTotal || 0);
+      const newTotal = Math.max(0, currentTotal - valueDeduction);
+
+      await updateDoc(orderRef, {
+        total: newTotal,
+        returnedProductsList: [...(orderData.returnedProductsList || []), { summary: returnedItemsSummary || 'Producto devuelto', deduction: valueDeduction, date: new Date().toISOString() }],
+        returnedProductsPhoto: returnedProductsPhoto
+      });
+
+      setProductReturnModalOpen(false);
+      setProductReturnOrderId(null);
+      setReturnedItemsSummary('');
+      setManualProductValue('');
+      setReturnedProductsPhoto('');
+      alert("✅ ¡Devolución de producto registrada y total actualizado con éxito!");
+    } catch (err) {
+      console.error(err);
+      alert("Error al registrar la devolución de productos.");
+    }
+  };
+
+  // GUARDAR REGISTRO DE VUELTO O DIFERENCIA DEVUELTA
+  const handleSaveChangeGiven = async () => {
+    const changeVal = parseFloat(changeAmountGiven);
+    if (isNaN(changeVal) || changeVal < 0) {
+      alert("⚠️ Ingrese un monto de vuelto válido.");
+      return;
+    }
+
+    try {
+      const orderRef = doc(db, 'orders', changeOrderId);
+      await updateDoc(orderRef, {
+        changeGivenRecord: {
+          amount: changeVal,
+          photo: changeProofPhoto || '',
+          date: new Date().toISOString()
+        }
+      });
+
+      setChangeModalOpen(false);
+      setChangeOrderId(null);
+      setChangeAmountGiven('');
+      setChangeProofPhoto('');
+      alert("✅ ¡Registro de vuelto/diferencia guardado con éxito!");
+    } catch (err) {
+      console.error(err);
+      alert("Error al guardar el vuelto.");
+    }
+  };
+
   const handleSaveCorruptPayment = async () => {
     if (!corruptReason.trim()) {
       alert("⚠️ Especifique el motivo del pago corrupto.");
@@ -636,6 +741,7 @@ export default function App() {
           <h2>PUNTO M - RUC 20123456789</h2>
           <p><strong>Cliente:</strong> ${orderToPrint.clientName} (${orderToPrint.clientPhone || 'Sin teléfono'})</p>
           <p><strong>Método de Pago:</strong> ${orderToPrint.paymentPreference} (${orderToPrint.paymentTiming})</p>
+          <p><strong>Vuelto a entregar:</strong> S/ ${Number(orderToPrint.expectedChange || 0).toFixed(2)}</p>
           <p><strong>Estado de Pago:</strong> ${orderToPrint.isPaid ? 'Pagado' : 'Pendiente'}</p>
           <table><tbody>${itemsHtml}</tbody></table>
           <h3>Total: S/ ${Number(orderToPrint.total).toFixed(2)}</h3>
@@ -676,7 +782,6 @@ export default function App() {
   
   const clientBlockedOrder = myOrders.find(o => o.isCorrupt === true);
 
-  // Verificación de Créditos en Mora (Vencidos + hasta 10 días extra)
   const nowTime = new Date().getTime();
   const clientCreditOrders = myOrders.filter(o => o.paymentPreference === 'Crédito' && !o.isPaid && !o.isCorrupt && o.creditDueDate);
   
@@ -687,9 +792,9 @@ export default function App() {
     const dueTime = new Date(ord.creditDueDate).getTime();
     const diffDays = (nowTime - dueTime) / (1000 * 60 * 60 * 24);
     if (diffDays > 0 && diffDays <= 10) {
-      isInGracePeriod = true; // 10 días extra con aviso de mora
+      isInGracePeriod = true;
     } else if (diffDays > 10) {
-      isStrictBlockedForMora = true; // Bloqueo total por mora vencida
+      isStrictBlockedForMora = true;
     }
   });
 
@@ -762,7 +867,6 @@ export default function App() {
       </header>
 
       <main className="max-w-6xl mx-auto w-full px-4 py-6 flex-1">
-        {/* AVISO DE MORA (10 días extra) */}
         {isInGracePeriod && userRole !== 'admin' && (
           <div className="bg-amber-50 border-2 border-amber-400 p-4 rounded-2xl mb-6 shadow flex items-center gap-3">
             <AlertCircle className="text-amber-600 w-8 h-8 flex-shrink-0" />
@@ -773,7 +877,6 @@ export default function App() {
           </div>
         )}
 
-        {/* BLOQUEO POR INCIDENCIA O MORA SUPERADA */}
         {(clientBlockedOrder || isStrictBlockedForMora) && userRole !== 'admin' ? (
           <div className="max-w-md mx-auto bg-white p-8 rounded-2xl shadow-2xl border text-center space-y-4 my-12">
             <div className="bg-red-100 text-red-700 p-4 rounded-full w-16 h-16 flex items-center justify-center mx-auto">
@@ -794,7 +897,6 @@ export default function App() {
                 )}
               </div>
             )}
-            {/* Mostrar facturas pendientes asociadas si las hay */}
             {clientCreditOrders.map(ord => ord.invoicePhoto && (
               <div key={ord.id} className="bg-gray-50 p-2 rounded-xl border text-xs text-left flex justify-between items-center">
                 <span>Factura Pendiente #{ord.id.slice(-6).toUpperCase()}</span>
@@ -903,7 +1005,26 @@ export default function App() {
                         <option value="Crédito">📋 Crédito (Exclusivo VIP)</option>
                       </select>
 
-                      {/* SI SELECCIONA CRÉDITO */}
+                      {/* SI ES EFECTIVO, PREGUNTAR CON CUÁNTO PAGA PARA EL CÁLCULO DE VUELTO */}
+                      {paymentPreference === 'Efectivo' && (
+                        <div className="space-y-1 bg-white p-2 rounded border">
+                          <label className="font-bold text-gray-700 text-[10px]">¿Con cuánto va a pagar? (Para calcular su vuelto):</label>
+                          <input 
+                            type="number"
+                            step="0.50"
+                            value={cashPayAmount}
+                            onChange={e => setCashPayAmount(e.target.value)}
+                            placeholder={`Monto (Ej. ${Math.ceil(cartTotal / 10) * 10 || 10})`}
+                            className="w-full border p-1 rounded text-xs font-bold text-green-800"
+                          />
+                          {cashPayAmount && calculatedChange >= 0 && (
+                            <p className="text-[10px] text-green-800 font-bold mt-1">
+                              🪙 Su vuelto estimado a recibir: S/ {calculatedChange.toFixed(2)}
+                            </p>
+                          )}
+                        </div>
+                      )}
+
                       {paymentPreference === 'Crédito' && (
                         isVipClient ? (
                           <div className="space-y-1 bg-white p-2 rounded border">
@@ -1039,11 +1160,24 @@ export default function App() {
                               </div>
                             )}
 
+                            {order.changeGivenRecord && (
+                              <div className="bg-blue-50 border border-blue-200 p-3 rounded-xl text-xs space-y-1">
+                                <p className="font-bold text-blue-900 flex items-center gap-1">
+                                  <Banknote size={14} /> Vuelto / Diferencia entregada: S/ {Number(order.changeGivenRecord.amount).toFixed(2)}
+                                </p>
+                                {order.changeGivenRecord.photo && (
+                                  <button onClick={() => setPreviewImage(order.changeGivenRecord.photo)} className="text-xs text-blue-700 underline font-bold flex items-center gap-1 mt-1">
+                                    <Eye size={12} /> Ver foto de comprobante de vuelto
+                                  </button>
+                                )}
+                              </div>
+                            )}
+
                             <div className="bg-gray-50 p-3 rounded-xl text-xs space-y-1">
                               <p className="font-bold text-gray-700">Productos:</p>
                               <p className="text-gray-600">{order.items?.map(i => `${i.qty}x ${i.name}`).join(', ')}</p>
                               <div className="flex justify-between font-bold text-gray-800 border-t pt-2">
-                                <span>{order.hasExactAmount ? 'Total a Pagar (Definitivo):' : 'Total Aproximado:'}</span>
+                                <span>Total Actualizado:</span>
                                 <span className="text-green-800 text-sm">S/ {Number(order.total || order.approxTotal).toFixed(2)}</span>
                               </div>
                             </div>
@@ -1062,6 +1196,9 @@ export default function App() {
                   <div className="inline-block bg-[#0b6b38] px-4 py-1 rounded text-white font-black text-xl mb-1">PUNTO M</div>
                   <p className="text-xs text-gray-500">Tel: {companyHeader.phone}</p>
                   <p className="text-xs font-bold text-[#0b6b38] mt-2">Cliente: {user?.name} | Telf: {clientPhone}</p>
+                  {paymentPreference === 'Efectivo' && cashPayAmount && (
+                    <p className="text-xs font-black text-blue-800 mt-1">🪙 Vuelto a recibir: S/ {calculatedChange.toFixed(2)} (Paga con S/ {cashPayAmount})</p>
+                  )}
                   <p className="text-xs text-amber-700 font-medium mt-1">⚠️ Este es un cálculo aproximado. El monto definitivo se confirmará tras la facturación.</p>
                 </div>
 
@@ -1086,6 +1223,7 @@ export default function App() {
                       `👤 *Cliente:* ${user ? user.name : 'Cliente'}\n` +
                       `📞 *Teléfono:* ${clientPhone}\n` +
                       `💳 *Método de Pago:* ${paymentPreference} ${paymentPreference === 'Crédito' ? `(${creditTerm})` : ''}\n` +
+                      (paymentPreference === 'Efectivo' ? `🪙 *Paga con:* S/ ${cashPayAmount || cartTotal} | *Vuelto est.:* S/ ${calculatedChange.toFixed(2)}\n` : '') +
                       `📅 *Entrega:* ${deliveryDate} a las ${deliveryTime}\n` +
                       `-----------------------------------\n` +
                       `📋 *Lista de Productos (Cantidades):*\n` + cart.map(i => `• ${i.qty}x ${i.name}`).join('\n') + `\n` +
@@ -1126,7 +1264,6 @@ export default function App() {
               </div>
             )}
 
-            {/* PANEL ADMIN CON PESTAÑA DE USUARIOS Y PRIVILEGIOS */}
             {view === 'admin' && userRole === 'admin' && (
               <div className="space-y-6 max-w-5xl mx-auto">
                 <div className="bg-white p-6 rounded-2xl shadow border">
@@ -1171,10 +1308,43 @@ export default function App() {
                                   {order.isPaid ? '🟢 Pagado' : '🟡 Pendiente'}
                                 </span>
                               </div>
-                              <p className="text-gray-500">📞 {order.clientPhone} | Pago: {order.paymentPreference} {order.creditTerm ? `(${order.creditTerm})` : ''}</p>
+
+                              {/* INFORMACIÓN DE CONTACTO Y UBICACIÓN PARA EL ADMIN */}
+                              <div className="flex flex-wrap items-center gap-3 pt-1 text-gray-700">
+                                <p className="flex items-center gap-1 font-bold">
+                                  <Phone size={14} className="text-green-700" /> {order.clientPhone || 'Sin teléfono'}
+                                </p>
+                                {order.location && (
+                                  <a href={order.location.mapUrl} target="_blank" rel="noreferrer" className="text-blue-600 font-bold underline flex items-center gap-1">
+                                    <MapPin size={14} /> Ver Ubicación GPS
+                                  </a>
+                                )}
+                              </div>
+
+                              <p className="text-gray-500">Pago: <strong>{order.paymentPreference}</strong> {order.creditTerm ? `(${order.creditTerm})` : ''}</p>
+                              
+                              {order.paymentPreference === 'Efectivo' && (
+                                <p className="text-blue-800 font-black">
+                                  🪙 Cliente paga con: S/ {Number(order.cashPayAmount || order.total).toFixed(2)} | **Vuelto a llevar: S/ {Number(order.expectedChange || 0).toFixed(2)}**
+                                </p>
+                              )}
+
                               <p className="text-gray-600">Items: {order.items?.map(i => `${i.qty}x ${i.name}`).join(', ')}</p>
+                              
+                              {order.returnedProductsList?.length > 0 && (
+                                <div className="text-amber-700 font-semibold">
+                                  🔄 Productos devueltos: {order.returnedProductsList.map(r => `${r.summary} (-S/${r.deduction})`).join(', ')}
+                                </div>
+                              )}
+
+                              {order.changeGivenRecord && (
+                                <div className="text-blue-700 font-bold">
+                                  💵 Vuelto entregado registrado: S/ {Number(order.changeGivenRecord.amount).toFixed(2)}
+                                </div>
+                              )}
+
                               <p className="font-bold text-green-800 text-xs">
-                                {order.hasExactAmount ? 'Total Definitivo:' : 'Total Aproximado:'} S/ {Number(order.total || order.approxTotal).toFixed(2)}
+                                Total Actualizado: S/ {Number(order.total || order.approxTotal).toFixed(2)}
                               </p>
                               
                               {order.invoicePhoto && (
@@ -1210,7 +1380,7 @@ export default function App() {
                           <div className="bg-gray-50 p-3 rounded-xl border flex flex-col sm:flex-row justify-between items-center gap-3">
                             <div className="text-xs">
                               <p className="font-bold text-gray-700">Gestión Administrativa:</p>
-                              <p className="text-gray-500">Registra el pago, sube la factura, define el monto o reporta pago corrupto.</p>
+                              <p className="text-gray-500">Registra pagos, facturas, vuelto entregado, devolución de productos o pago corrupto.</p>
                             </div>
 
                             <div className="flex flex-wrap items-center gap-2">
@@ -1237,15 +1407,26 @@ export default function App() {
                                 <Receipt size={14} /> {order.invoicePhoto ? '🔄 Cambiar Factura' : '📄 Subir Factura'}
                               </button>
 
+                              {/* BOTÓN NUEVO: DIFERENCIA / VUELTO DEVUELTO */}
                               <button 
                                 onClick={() => {
-                                  setFinalAmountOrderId(order.id);
-                                  setExactFinalAmount(order.total || order.approxTotal || '');
-                                  setFinalAmountModalOpen(true);
+                                  setChangeOrderId(order.id);
+                                  setChangeAmountGiven(order.expectedChange || '');
+                                  setChangeModalOpen(true);
                                 }}
-                                className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-3 py-2 rounded-xl text-xs flex items-center gap-1 shadow"
+                                className="bg-teal-600 hover:bg-teal-700 text-white font-bold px-3 py-2 rounded-xl text-xs flex items-center gap-1 shadow"
                               >
-                                <DollarSign size={14} /> Ingresar monto a pagar
+                                <Banknote size={14} /> Vuelto / Diferencia
+                              </button>
+
+                              <button 
+                                onClick={() => {
+                                  setProductReturnOrderId(order.id);
+                                  setProductReturnModalOpen(true);
+                                }}
+                                className="bg-amber-600 hover:bg-amber-700 text-white font-bold px-3 py-2 rounded-xl text-xs flex items-center gap-1 shadow"
+                              >
+                                <ReturnIcon size={14} /> Devolución Producto
                               </button>
 
                               <button 
@@ -1265,7 +1446,6 @@ export default function App() {
                     </div>
                   )}
 
-                  {/* PESTAÑA USUARIOS Y PRIVILEGIOS VIP */}
                   {adminSubTab === 'users' && (
                     <div className="space-y-4">
                       <h3 className="font-bold text-base text-gray-800 flex items-center gap-2">
@@ -1348,7 +1528,7 @@ export default function App() {
                             <div className="space-y-1">
                               <p className="font-bold text-sm text-gray-900">{order.clientName} (Telf: {order.clientPhone})</p>
                               <p className="text-red-700 font-bold">⚠️ Motivo: {order.corruptReason}</p>
-                              <p className="text-gray-600">Total: S/ {Number(order.total || order.approxTotal).toFixed(2)}</p>
+                              <p className="text-gray-600">Total Actualizado: S/ {Number(order.total || order.approxTotal).toFixed(2)}</p>
                               {order.corruptPhoto && (
                                 <button onClick={() => setPreviewImage(order.corruptPhoto)} className="text-blue-700 font-bold underline flex items-center gap-1 cursor-pointer">
                                   <Eye size={14} /> Ver Comprobante/Efectivo con Incidencia
@@ -1399,7 +1579,7 @@ export default function App() {
 
                   {adminSubTab === 'returns' && (
                     <div className="space-y-4">
-                      <h3 className="font-bold text-base text-gray-800">Devoluciones</h3>
+                      <h3 className="font-bold text-base text-gray-800">Devoluciones de Pedidos Completos (No Entregados)</h3>
                       {returnOrders.map(order => (
                         <div key={order.id} className="border border-red-200 p-4 rounded-xl bg-red-50 flex justify-between items-center text-xs">
                           <div>
@@ -1413,6 +1593,82 @@ export default function App() {
                       ))}
                     </div>
                   )}
+                </div>
+              </div>
+            )}
+
+            {/* MODAL DE VUELTO O DIFERENCIA DEVUELTA */}
+            {changeModalOpen && (
+              <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+                <div className="bg-white p-6 rounded-2xl max-w-md w-full shadow-2xl space-y-4">
+                  <h3 className="font-bold text-base text-teal-700 flex items-center gap-2">
+                    <Banknote size={20} /> Registrar Vuelto / Diferencia Devuelta
+                  </h3>
+                  <p className="text-xs text-gray-600">Ingrese el monto de vuelto o diferencia entregada al cliente y adjunte una foto de comprobante o efectivo entregado:</p>
+
+                  <input 
+                    type="number"
+                    step="0.01"
+                    value={changeAmountGiven}
+                    onChange={e => setChangeAmountGiven(e.target.value)}
+                    placeholder="Monto de vuelto (Ej. 5.00)"
+                    className="w-full border p-2 rounded-lg text-xs font-bold"
+                  />
+
+                  <div className="space-y-1 bg-teal-50 p-3 rounded-xl border border-teal-200 text-xs">
+                    <p className="font-bold text-teal-900 flex items-center gap-1"><Camera size={14} /> Foto del Vuelto / Comprobante (Opcional si es efectivo):</p>
+                    <label className="cursor-pointer bg-white border-2 border-dashed border-teal-400 text-gray-800 font-bold py-2 px-2 rounded-lg flex items-center justify-center gap-1">
+                      <Upload size={14} /> <span>{changeProofPhoto ? '✅ Foto cargada' : 'Seleccionar foto'}</span>
+                      <input type="file" accept="image/*" onChange={handleChangeProofPhotoUpload} className="hidden" />
+                    </label>
+                  </div>
+
+                  <div className="flex justify-end gap-2 pt-2">
+                    <button onClick={() => { setChangeModalOpen(false); setChangeOrderId(null); setChangeAmountGiven(''); setChangeProofPhoto(''); }} className="bg-gray-200 text-gray-700 font-bold px-4 py-2 rounded-lg text-xs">Cancelar</button>
+                    <button onClick={handleSaveChangeGiven} className="bg-teal-600 hover:bg-teal-700 text-white font-bold px-4 py-2 rounded-lg text-xs shadow">Guardar Vuelto</button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* MODAL DEVOLUCIÓN PARCIAL CON VALOR MANUAL */}
+            {productReturnModalOpen && (
+              <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+                <div className="bg-white p-6 rounded-2xl max-w-md w-full shadow-2xl space-y-4">
+                  <h3 className="font-bold text-base text-amber-700 flex items-center gap-2">
+                    <ReturnIcon size={20} /> Devolución Parcial de Productos
+                  </h3>
+                  <p className="text-xs text-gray-600">Escriba el detalle del producto devuelto y **ingrese manualmente el valor total** a descontar del pedido:</p>
+
+                  <input 
+                    type="text"
+                    value={returnedItemsSummary}
+                    onChange={e => setReturnedItemsSummary(e.target.value)}
+                    placeholder="Descripción (Ej. 1x Harina de Trigo 1kg)"
+                    className="w-full border p-2 rounded-lg text-xs"
+                  />
+
+                  <input 
+                    type="number"
+                    step="0.01"
+                    value={manualProductValue}
+                    onChange={e => setManualProductValue(e.target.value)}
+                    placeholder="Valor total a descontar (Ej. 4.50)"
+                    className="w-full border p-2 rounded-lg text-xs font-bold"
+                  />
+
+                  <div className="space-y-1 bg-amber-50 p-3 rounded-xl border border-amber-200 text-xs">
+                    <p className="font-bold text-amber-900 flex items-center gap-1"><Camera size={14} /> Foto de los productos devueltos: *</p>
+                    <label className="cursor-pointer bg-white border-2 border-dashed border-amber-400 text-gray-800 font-bold py-2 px-2 rounded-lg flex items-center justify-center gap-1">
+                      <Upload size={14} /> <span>{returnedProductsPhoto ? '✅ Foto cargada' : 'Seleccionar foto'}</span>
+                      <input type="file" accept="image/*" onChange={handleReturnedProductsPhotoUpload} className="hidden" />
+                    </label>
+                  </div>
+
+                  <div className="flex justify-end gap-2 pt-2">
+                    <button onClick={() => { setProductReturnModalOpen(false); setProductReturnOrderId(null); setReturnedItemsSummary(''); setManualProductValue(''); setReturnedProductsPhoto(''); }} className="bg-gray-200 text-gray-700 font-bold px-4 py-2 rounded-lg text-xs">Cancelar</button>
+                    <button onClick={handleSaveProductReturn} className="bg-amber-600 hover:bg-amber-700 text-white font-bold px-4 py-2 rounded-lg text-xs shadow">Aplicar Descuento</button>
+                  </div>
                 </div>
               </div>
             )}
