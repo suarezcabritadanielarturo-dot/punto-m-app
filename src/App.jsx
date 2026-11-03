@@ -56,6 +56,7 @@ export default function App() {
   // Estados para el Asistente de Pedidos por IA de los clientes
   const [clientPrompt, setClientPrompt] = useState('');
   const [isAiOrdering, setIsAiOrdering] = useState(false);
+  const [aiOrderFeedback, setAiOrderFeedback] = useState('');
 
   useEffect(() => {
     const unsubscribeProducts = onSnapshot(collection(db, 'products'), (snapshot) => {
@@ -144,11 +145,13 @@ export default function App() {
 
   const cartTotal = cart.reduce((sum, item) => sum + (item.price * item.qty), 0);
 
-  // Función para procesar pedidos de clientes mediante Gemini IA
+  // Función mejorada para procesar pedidos y avisar de productos no existentes
   const handleClientAiOrder = async () => {
     if (!clientPrompt.trim()) return;
 
     setIsAiOrdering(true);
+    setAiOrderFeedback('');
+
     try {
       const catalogList = products.map(p => `- ID: ${p.id}, Nombre: ${p.name}, Precio: ${p.price}`).join('\n');
 
@@ -157,13 +160,17 @@ export default function App() {
       Aquí tienes la lista de productos disponibles en el catálogo con sus IDs y precios:
       ${catalogList}
 
-      Por favor, analiza el mensaje del cliente y encuentra qué productos de la lista desea comprar y qué cantidad.
-      Responde ÚNICAMENTE con un arreglo JSON estricto donde cada objeto tenga:
-      - "id": el ID exacto del producto del catálogo
-      - "qty": la cantidad solicitada (número entero)
+      Analiza el mensaje del cliente:
+      1. Identifica qué productos de la lista desea comprar y su cantidad.
+      2. Identifica si menciona algún producto que NO esté en la lista del catálogo disponible.
 
-      Ejemplo: [{"id": "1", "qty": 2}, {"id": "3", "qty": 1}]
-      Si no coincide con ningún producto o hay dudas, responde solo con un arreglo vacío []. No agregues texto adicional ni formato markdown extra.`;
+      Responde ÚNICAMENTE con un objeto JSON estricto con esta estructura exacta:
+      {
+        "found": [{"id": "...", "qty": ...}],
+        "notFound": ["nombre del producto 1", "nombre del producto 2"]
+      }
+
+      No agregues texto adicional ni formato markdown extra. Si no hay nada, devuelve {"found": [], "notFound": []}.`;
 
       const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`, {
         method: 'POST',
@@ -176,10 +183,13 @@ export default function App() {
       const data = await response.json();
       const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
       const jsonClean = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
-      const requestedItems = JSON.parse(jsonClean);
+      const result = JSON.parse(jsonClean);
 
-      if (Array.isArray(requestedItems) && requestedItems.length > 0) {
-        requestedItems.forEach(req => {
+      let feedbackMessages = [];
+
+      // Agregar productos encontrados al carrito
+      if (result.found && Array.isArray(result.found) && result.found.length > 0) {
+        result.found.forEach(req => {
           const productFound = products.find(p => p.id === req.id);
           if (productFound) {
             for (let i = 0; i < (req.qty || 1); i++) {
@@ -187,15 +197,26 @@ export default function App() {
             }
           }
         });
-        alert("¡IA de Pedidos: Productos agregados al carrito con éxito!");
-        setClientPrompt('');
-      } else {
-        alert("La IA no pudo identificar productos exactos de la tienda en tu mensaje. Intenta ser más específico.");
+        feedbackMessages.log = "Productos disponibles agregados al carrito.";
       }
+
+      // Construir mensaje para los no encontrados
+      if (result.notFound && Array.isArray(result.notFound) && result.notFound.length > 0) {
+        feedbackMessages.push(`⚠️ Los siguientes productos no los tenemos en existencia: ${result.notFound.join(', ')}.`);
+      }
+
+      if (result.found && result.found.length > 0) {
+        feedbackMessages.unshift("✅ Se agregaron al carrito los productos disponibles.");
+      } else if ((!result.notFound || result.notFound.length === 0) && (!result.found || result.found.length === 0)) {
+        feedbackMessages.push("No se pudieron identificar productos en tu mensaje.");
+      }
+
+      setAiOrderFeedback(feedbackMessages.join(' '));
+      setClientPrompt('');
 
     } catch (error) {
       console.error("Error en IA de pedidos:", error);
-      alert("Hubo un error al procesar tu pedido con la IA.");
+      setAiOrderFeedback("Hubo un error al procesar tu pedido con la IA.");
     } finally {
       setIsAiOrdering(false);
     }
@@ -334,7 +355,7 @@ export default function App() {
                   <Sparkles size={16} className="text-[#0b6b38]" /> Asistente de Pedidos IA
                 </h3>
                 <p className="text-xs text-gray-600 mb-2">
-                  Escribe lo que necesitas (ej: "Quiero 2 kilos de arroz y un aceite") y la IA lo agregará al carrito por ti.
+                  Escribe lo que necesitas (ej: "Quiero 2 kilos de arroz y un jabón") y la IA agregará lo disponible al carrito y te avisará si algo no existe.
                 </p>
                 <div className="flex gap-2">
                   <input 
@@ -353,6 +374,11 @@ export default function App() {
                     <Send size={14} /> {isAiOrdering ? 'Procesando...' : 'Pedir'}
                   </button>
                 </div>
+                {aiOrderFeedback && (
+                  <div className="mt-2.5 text-xs font-medium bg-amber-50 border border-amber-200 text-amber-900 p-2 rounded-lg">
+                    {aiOrderFeedback}
+                  </div>
+                )}
               </div>
 
               <div>
