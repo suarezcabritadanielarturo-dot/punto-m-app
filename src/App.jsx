@@ -20,7 +20,8 @@ import {
   History,
   Image as ImageIcon,
   Calendar,
-  AlertTriangle
+  AlertTriangle,
+  Eye
 } from 'lucide-react';
 import { auth, googleProvider, db, signInWithPopup, signOut } from './firebase';
 import { 
@@ -60,6 +61,14 @@ export default function App() {
   const [failModalOpen, setFailModalOpen] = useState(false);
   const [failOrderId, setFailOrderId] = useState(null);
   const [failReason, setFailReason] = useState('');
+
+  // Modal para opciones de Pago (Efectivo o Capture)
+  const [payModalOpen, setPayModalOpen] = useState(false);
+  const [payOrderId, setPayOrderId] = useState(null);
+  const [paymentProof, setPaymentProof] = useState('');
+
+  // Modal para ver el comprobante en grande
+  const [previewImage, setPreviewImage] = useState(null);
 
   const [companyHeader] = useState({
     name: 'PUNTO M',
@@ -105,7 +114,6 @@ export default function App() {
         ...doc.data()
       }));
       
-      // Ordenamiento inteligente: orden de llegada + hora de entrega preferida
       dbOrders.sort((a, b) => {
         const timeA = `${a.deliveryDate || ''} ${a.deliveryTime || ''}`;
         const timeB = `${b.deliveryDate || ''} ${b.deliveryTime || ''}`;
@@ -239,6 +247,8 @@ export default function App() {
       deliveryDate: deliveryDate || 'Lo antes posible',
       deliveryTime: deliveryTime || 'Horario abierto',
       status: 'Pendiente',
+      paymentMethod: '',
+      paymentProof: '',
       failReason: '',
       createdAt: new Date()
     };
@@ -259,6 +269,18 @@ export default function App() {
       const reader = new FileReader();
       reader.onloadend = () => {
         setNewProduct(prev => ({ ...prev, image: reader.result }));
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  // Carga de capture de pago desde admin
+  const handlePaymentProofUpload = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setPaymentProof(reader.result);
       };
       reader.readAsDataURL(file);
     }
@@ -395,15 +417,33 @@ export default function App() {
   };
 
   // Cambiar estado de pedido
-  const handleUpdateOrderStatus = async (orderId, newStatus, reason = '') => {
+  const handleUpdateOrderStatus = async (orderId, newStatus, extraData = {}) => {
     try {
       const orderRef = doc(db, 'orders', orderId);
-      const updateData = { status: newStatus };
-      if (reason) updateData.failReason = reason;
-      await updateDoc(orderRef, updateData);
+      await updateDoc(orderRef, { status: newStatus, ...extraData });
     } catch (err) {
       console.error("Error actualizando estado del pedido:", err);
     }
+  };
+
+  // Guardar pago en Efectivo
+  const handlePayCash = async () => {
+    await handleUpdateOrderStatus(payOrderId, 'Pagado', { paymentMethod: 'Efectivo', paymentProof: '' });
+    setPayModalOpen(false);
+    setPayOrderId(null);
+    setPaymentProof('');
+  };
+
+  // Guardar pago con Capture
+  const handlePayCapture = async () => {
+    if (!paymentProof) {
+      alert("Por favor selecciona o sube la imagen del capture de pago.");
+      return;
+    }
+    await handleUpdateOrderStatus(payOrderId, 'Pagado', { paymentMethod: 'Transferencia / Capture', paymentProof: paymentProof });
+    setPayModalOpen(false);
+    setPayOrderId(null);
+    setPaymentProof('');
   };
 
   // Guardar motivo de fallo de entrega
@@ -412,7 +452,7 @@ export default function App() {
       alert("Por favor escribe el motivo por el cual no se pudo entregar.");
       return;
     }
-    await handleUpdateOrderStatus(failOrderId, 'No se pudo entregar', failReason);
+    await handleUpdateOrderStatus(failOrderId, 'No se pudo entregar', { failReason: failReason });
     setFailModalOpen(false);
     setFailOrderId(null);
     setFailReason('');
@@ -437,6 +477,10 @@ export default function App() {
       ? `<p style="color: red;"><strong>Motivo de no entrega:</strong> ${orderToPrint.failReason}</p>`
       : '';
 
+    const paymentInfoHtml = orderToPrint.status === 'Pagado' || orderToPrint.status === 'Entregado'
+      ? `<p><strong>Método de Pago:</strong> ${orderToPrint.paymentMethod || 'Pagado'}</p>`
+      : '';
+
     printWindow.document.write(`
       <html>
         <head>
@@ -458,6 +502,7 @@ export default function App() {
           <p><strong>Email:</strong> ${orderToPrint.clientEmail || 'N/A'}</p>
           <p><strong>Fecha/Hora Entrega Preferida:</strong> ${orderToPrint.deliveryDate || 'N/A'} - ${orderToPrint.deliveryTime || 'N/A'}</p>
           <p><strong>Estado Actual:</strong> ${orderToPrint.status}</p>
+          ${paymentInfoHtml}
           ${failReasonHtml}
           ${locationHtml}
           <table>
@@ -833,6 +878,21 @@ export default function App() {
                           <p className="text-gray-600 font-medium">Items: {order.items ? order.items.map(i => `${i.qty}x ${i.name}`).join(', ') : 'Sin detalle'}</p>
                           <p className="font-bold text-green-800 text-xs">Total aprox: S/ {Number(order.total).toFixed(2)}</p>
                           
+                          {order.paymentMethod && (
+                            <p className="text-blue-700 font-semibold text-[11px]">
+                              💳 Método de Pago: {order.paymentMethod}
+                            </p>
+                          )}
+
+                          {order.paymentProof && (
+                            <button 
+                              onClick={() => setPreviewImage(order.paymentProof)}
+                              className="text-xs text-indigo-600 hover:text-indigo-800 font-bold flex items-center gap-1 underline mt-1"
+                            >
+                              <Eye size={14} /> Ver Capture de Pago Subido
+                            </button>
+                          )}
+
                           {order.failReason && (
                             <p className="text-red-600 font-bold bg-red-50 p-1.5 rounded border border-red-200 mt-1">
                               ⚠️ Motivo no entrega: {order.failReason}
@@ -858,10 +918,13 @@ export default function App() {
                             <Printer size={14} /> Imprimir
                           </button>
                           
-                          {/* BOTÓN: CAMBIAR A PAGADO */}
+                          {/* BOTÓN: ABRIR MODAL DE PAGO (EFECTIVO O CAPTURE) */}
                           {order.status === 'Pendiente' && (
                             <button 
-                              onClick={() => handleUpdateOrderStatus(order.id, 'Pagado')}
+                              onClick={() => {
+                                setPayOrderId(order.id);
+                                setPayModalOpen(true);
+                              }}
                               className="bg-blue-600 hover:bg-blue-700 text-white p-2 rounded-lg text-xs font-bold flex items-center gap-1"
                               title="Marcar como Pagado"
                             >
@@ -1003,6 +1066,60 @@ Azúcar Rubia 1kg - 3.80 S/"
           </div>
         )}
 
+        {/* MODAL PARA SELECCIONAR MÉTODO DE PAGO (EFECTIVO O CAPTURE) */}
+        {payModalOpen && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white p-6 rounded-2xl max-w-md w-full shadow-2xl space-y-4">
+              <h3 className="font-bold text-base text-blue-700 flex items-center gap-2">
+                <CreditCard size={20} /> Registrar Pago del Pedido
+              </h3>
+              <p className="text-xs text-gray-600">
+                Selecciona cómo realizó el pago el cliente:
+              </p>
+
+              <div className="space-y-3 pt-2">
+                <button 
+                  onClick={handlePayCash}
+                  className="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-xl text-xs shadow flex items-center justify-center gap-2"
+                >
+                  💵 Pagó en Efectivo
+                </button>
+
+                <div className="border-t pt-3 space-y-2">
+                  <p className="text-xs font-bold text-gray-700">Subir Capture de Transferencia / Pago Móvil:</p>
+                  <label className="cursor-pointer bg-gray-100 hover:bg-gray-200 border-2 border-dashed border-gray-300 text-gray-800 text-xs font-bold py-3 px-3 rounded-xl flex flex-col items-center justify-center gap-1 transition">
+                    <Upload size={18} className="text-gray-500" />
+                    <span>{paymentProof ? '✅ Capture seleccionado (Cambiar)' : 'Seleccionar imagen de capture'}</span>
+                    <input type="file" accept="image/*" onChange={handlePaymentProofUpload} className="hidden" />
+                  </label>
+
+                  {paymentProof && (
+                    <button 
+                      onClick={handlePayCapture}
+                      className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl text-xs shadow flex items-center justify-center gap-2 mt-2"
+                    >
+                      📤 Guardar con Capture de Pago
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex justify-end pt-2">
+                <button 
+                  onClick={() => {
+                    setPayModalOpen(false);
+                    setPayOrderId(null);
+                    setPaymentProof('');
+                  }}
+                  className="bg-gray-200 hover:bg-gray-300 text-gray-700 font-bold px-4 py-2 rounded-lg text-xs"
+                >
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* MODAL PARA MOTIVO DE NO ENTREGA */}
         {failModalOpen && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -1038,6 +1155,24 @@ Azúcar Rubia 1kg - 3.80 S/"
                   Guardar Motivo
                 </button>
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* MODAL PARA VER CAPTURE EN GRANDE */}
+        {previewImage && (
+          <div className="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-50 p-4" onClick={() => setPreviewImage(null)}>
+            <div className="bg-white p-4 rounded-2xl max-w-lg w-full shadow-2xl relative space-y-3">
+              <h3 className="font-bold text-sm text-gray-800 text-center">Comprobante de Pago (Capture)</h3>
+              <div className="flex justify-center max-h-[70vh] overflow-auto">
+                <img src={previewImage} alt="Capture de Pago" className="max-w-full rounded-lg object-contain" />
+              </div>
+              <button 
+                onClick={() => setPreviewImage(null)}
+                className="w-full bg-gray-800 text-white font-bold py-2 rounded-lg text-xs"
+              >
+                Cerrar Vista Previa
+              </button>
             </div>
           </div>
         )}
