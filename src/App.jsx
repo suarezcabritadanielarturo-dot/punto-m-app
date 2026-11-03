@@ -263,6 +263,12 @@ export default function App() {
         }
         setUserRole(assignedRole);
         setIsVipClient(vipStatus);
+
+        // Si es chofer o personal administrativo al entrar, llevarlos directamente a la vista admin/pedidos si están en el catálogo por defecto
+        if (assignedRole === 'chofer') {
+          setView('admin');
+          setAdminSubTab('orders');
+        }
       } else {
         setUser(null);
         setUserRole('client');
@@ -315,7 +321,6 @@ export default function App() {
     }
   };
 
-  // Función para registrar nuevo método de pago (Admin)
   const handleSavePaymentMethod = async (e) => {
     e.preventDefault();
     if (!newPayTitle.trim() || !newPayDesc.trim()) {
@@ -956,13 +961,21 @@ export default function App() {
     }
   });
 
-  const canManageAdminPanel = userRole === 'admin' || userRole === 'encargado' || userRole === 'contabilidad' || userRole === 'supervisor';
+  // Roles que pueden ver el panel de administración / gestión operativa
+  const canManageAdminPanel = userRole === 'admin' || userRole === 'encargado' || userRole === 'contabilidad' || userRole === 'supervisor' || userRole === 'chofer';
 
   return (
     <div className="min-h-screen flex flex-col bg-gray-100 text-gray-800">
       <header className="bg-[#0b6b38] text-white shadow-lg sticky top-0 z-50">
         <div className="max-w-6xl mx-auto px-4 py-3 flex justify-between items-center">
-          <div className="flex items-center gap-2 cursor-pointer" onClick={() => setView('catalog')}>
+          <div className="flex items-center gap-2 cursor-pointer" onClick={() => {
+            if (userRole === 'chofer') {
+              setView('admin');
+              setAdminSubTab('orders');
+            } else {
+              setView('catalog');
+            }
+          }}>
             <div className="bg-[#074825] px-4 py-1.5 rounded-lg border border-green-600 flex items-center">
               <span className="font-extrabold text-2xl tracking-widest text-white">PUNTO</span>
               <span className="h-3.5 w-3.5 bg-[#fbc02d] rounded-full inline-block ml-1"></span>
@@ -971,7 +984,7 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-3">
-            {user && (
+            {user && userRole === 'client' && (
               <button 
                 onClick={() => setView('tracking')}
                 className={`px-3 py-1.5 rounded-lg font-bold text-xs flex items-center gap-1.5 transition ${view === 'tracking' ? 'bg-[#fbc02d] text-black shadow' : 'bg-[#074825] hover:bg-green-700 text-white'}`}
@@ -1004,7 +1017,7 @@ export default function App() {
                 </div>
 
                 {canManageAdminPanel && (
-                  <button onClick={() => setView('admin')} title="Panel Admin" className="p-1.5 hover:bg-green-700 rounded-full text-[#fbc02d] transition">
+                  <button onClick={() => { setView('admin'); setAdminSubTab('orders'); }} title="Panel de Gestión" className="p-1.5 hover:bg-green-700 rounded-full text-[#fbc02d] transition">
                     <Settings size={18} />
                   </button>
                 )}
@@ -1019,14 +1032,16 @@ export default function App() {
               </button>
             )}
 
-            <button onClick={() => setView('catalog')} className="relative bg-white text-[#0b6b38] p-2 rounded-full font-bold shadow hover:bg-gray-100">
-              <ShoppingBag size={22} />
-              {cart.length > 0 && (
-                <span className="absolute -top-1 -right-1 bg-red-600 text-white text-xs w-5 h-5 flex items-center justify-center rounded-full font-black">
-                  {cart.reduce((a, b) => a + b.qty, 0)}
-                </span>
-              )}
-            </button>
+            {userRole === 'client' && (
+              <button onClick={() => setView('catalog')} className="relative bg-white text-[#0b6b38] p-2 rounded-full font-bold shadow hover:bg-gray-100">
+                <ShoppingBag size={22} />
+                {cart.length > 0 && (
+                  <span className="absolute -top-1 -right-1 bg-red-600 text-white text-xs w-5 h-5 flex items-center justify-center rounded-full font-black">
+                    {cart.reduce((a, b) => a + b.qty, 0)}
+                  </span>
+                )}
+              </button>
+            )}
           </div>
         </div>
       </header>
@@ -1085,7 +1100,7 @@ export default function App() {
           </div>
         ) : (
           <>
-            {view === 'catalog' && (
+            {view === 'catalog' && userRole === 'client' && (
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 <div className="lg:col-span-2 space-y-6">
                   
@@ -1257,7 +1272,7 @@ export default function App() {
               </div>
             )}
 
-            {view === 'tracking' && (
+            {view === 'tracking' && userRole === 'client' && (
               <div className="max-w-3xl mx-auto space-y-6">
                 <div className="bg-white p-6 rounded-2xl shadow border">
                   <h2 className="font-bold text-xl text-gray-800 mb-2 flex items-center gap-2 border-b pb-3">
@@ -1355,7 +1370,7 @@ export default function App() {
               </div>
             )}
 
-            {view === 'receipt' && (
+            {view === 'receipt' && userRole === 'client' && (
               <div className="max-w-md mx-auto bg-white p-6 rounded-2xl shadow-2xl border space-y-4">
                 <div className="text-center border-b pb-3">
                   <div className="inline-block bg-[#0b6b38] px-4 py-1 rounded text-white font-black text-xl mb-1">PUNTO M</div>
@@ -1426,12 +1441,12 @@ export default function App() {
               </div>
             )}
 
-            {view === 'admin' && canManageAdminPanel && (
+            {(view === 'admin' || userRole !== 'client') && canManageAdminPanel && (
               <div className="space-y-6 max-w-5xl mx-auto">
                 <div className="bg-white p-6 rounded-2xl shadow border">
                   <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b pb-4 mb-6 gap-3">
                     <h2 className="font-bold text-xl text-gray-800 flex items-center gap-2">
-                      <Settings className="text-[#0b6b38]" /> Panel de Administración PUNTO M
+                      <Settings className="text-[#0b6b38]" /> Panel de Gestión - PUNTO M ({userRole.toUpperCase()})
                     </h2>
                     
                     <div className="flex items-center gap-2">
@@ -1447,21 +1462,26 @@ export default function App() {
 
                       <div className="flex bg-gray-100 p-1 rounded-xl text-xs font-bold gap-1 flex-wrap">
                         <button onClick={() => setAdminSubTab('orders')} className={`px-3 py-2 rounded-lg ${adminSubTab === 'orders' ? 'bg-[#0b6b38] text-white shadow' : 'text-gray-600'}`}>📦 Pedidos</button>
-                        <button onClick={() => setAdminSubTab('paymethods')} className={`px-3 py-2 rounded-lg ${adminSubTab === 'paymethods' ? 'bg-cyan-700 text-white shadow' : 'text-gray-600'}`}>💳 Métodos de Pago</button>
-                        <button onClick={() => setAdminSubTab('refunds')} className={`px-3 py-2 rounded-lg relative ${adminSubTab === 'refunds' ? 'bg-purple-700 text-white shadow' : 'text-gray-600'}`}>
-                          🔄 Devolución de Dinero
-                          {refundDebtOrders.length > 0 && (
-                            <span className="absolute -top-1 -right-1 bg-red-600 text-white text-[10px] w-4 h-4 rounded-full flex items-center justify-center font-black">
-                              {refundDebtOrders.length}
-                            </span>
-                          )}
-                        </button>
+                        <button onClick={() => setAdminSubTab('paymethods')} className={`px-3 py-2 rounded-lg ${adminSubTab === 'paymethods' ? 'bg-cyan-700 text-white shadow' : 'text-gray-600'}`}>💳 Métodos de Pago y QR</button>
+                        {userRole !== 'chofer' && (
+                          <button onClick={() => setAdminSubTab('refunds')} className={`px-3 py-2 rounded-lg relative ${adminSubTab === 'refunds' ? 'bg-purple-700 text-white shadow' : 'text-gray-600'}`}>
+                            🔄 Devoluciones de Dinero
+                            {refundDebtOrders.length > 0 && (
+                              <span className="absolute -top-1 -right-1 bg-red-600 text-white text-[10px] w-4 h-4 rounded-full flex items-center justify-center font-black">
+                                {refundDebtOrders.length}
+                              </span>
+                            )}
+                          </button>
+                        )}
                         {userRole === 'admin' && (
                           <button onClick={() => setAdminSubTab('users')} className={`px-3 py-2 rounded-lg ${adminSubTab === 'users' ? 'bg-[#0b6b38] text-white shadow' : 'text-gray-600'}`}>👥 Privilegios y Personal</button>
                         )}
-                        <button onClick={() => setAdminSubTab('corrupt')} className={`px-3 py-2 rounded-lg ${adminSubTab === 'corrupt' ? 'bg-red-600 text-white shadow' : 'text-gray-600'}`}>🚫 Pagos Corruptos ({corruptOrdersList.length})</button>
-                        <button onClick={() => setAdminSubTab('accounting')} className={`px-3 py-2 rounded-lg ${adminSubTab === 'accounting' ? 'bg-[#0b6b38] text-white shadow' : 'text-gray-600'}`}>📊 Contabilidad</button>
-                        <button onClick={() => setAdminSubTab('returns')} className={`px-3 py-2 rounded-lg ${adminSubTab === 'returns' ? 'bg-[#0b6b38] text-white shadow' : 'text-gray-600'}`}>🔄 Devoluciones</button>
+                        {userRole === 'admin' && (
+                          <button onClick={() => setAdminSubTab('corrupt')} className={`px-3 py-2 rounded-lg ${adminSubTab === 'corrupt' ? 'bg-red-600 text-white shadow' : 'text-gray-600'}`}>🚫 Pagos Corruptos ({corruptOrdersList.length})</button>
+                        )}
+                        {userRole !== 'chofer' && (
+                          <button onClick={() => setAdminSubTab('accounting')} className={`px-3 py-2 rounded-lg ${adminSubTab === 'accounting' ? 'bg-[#0b6b38] text-white shadow' : 'text-gray-600'}`}>📊 Contabilidad</button>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -1478,7 +1498,7 @@ export default function App() {
                         const cashRetainedByCourier = isCash ? Math.max(0, cashCollected - actualChangeGiven) : 0;
                         const totalToStore = cashRetainedByCourier;
 
-                        // Permisos detallados para chofer, cajera, encargado, contabilidad, supervisor, admin
+                        // Permisos detallados para chofer
                         const canManageFinances = userRole === 'admin' || userRole === 'cajera' || userRole === 'encargado' || userRole === 'contabilidad';
                         const canManageLogistics = userRole === 'admin' || userRole === 'chofer' || userRole === 'encargado' || userRole === 'supervisor';
                         const canCollectCashOrCard = userRole === 'admin' || userRole === 'cajera' || userRole === 'chofer' || userRole === 'encargado';
@@ -1587,14 +1607,6 @@ export default function App() {
 
                                 {canManageLogistics && (
                                   <>
-                                    <button onClick={() => handleUpdateOrderStatus(order.id, 'Alistado')} className="bg-purple-600 text-white p-2 rounded-lg text-xs font-bold flex items-center gap-1">
-                                      <PackageCheck size={14} /> Alistado
-                                    </button>
-
-                                    <button onClick={() => handleUpdateOrderStatus(order.id, 'En Camino')} className="bg-indigo-600 text-white p-2 rounded-lg text-xs font-bold flex items-center gap-1">
-                                      <Truck size={14} /> En Camino
-                                    </button>
-
                                     <button onClick={() => handleUpdateOrderStatus(order.id, 'Entregado')} className="bg-green-600 text-white p-2 rounded-lg text-xs font-bold flex items-center gap-1">
                                       <CheckCircle size={14} /> Entregado
                                     </button>
@@ -1609,23 +1621,11 @@ export default function App() {
 
                             <div className="bg-gray-50 p-3 rounded-xl border flex flex-col sm:flex-row justify-between items-center gap-3">
                               <div className="text-xs">
-                                <p className="font-bold text-gray-700">Gestión ({userRole.toUpperCase()}):</p>
-                                <p className="text-gray-500">Acciones y registros disponibles.</p>
+                                <p className="font-bold text-gray-700">Acciones para Chofer / Personal ({userRole.toUpperCase()}):</p>
+                                <p className="text-gray-500">Registrar cobros, vueltos y devoluciones.</p>
                               </div>
 
                               <div className="flex flex-wrap items-center gap-2">
-                                {canManageFinances && (
-                                  <button 
-                                    onClick={() => {
-                                      setInvoiceOrderId(order.id);
-                                      setInvoiceModalOpen(true);
-                                    }}
-                                    className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-3 py-2 rounded-xl text-xs flex items-center gap-1 shadow"
-                                  >
-                                    <Receipt size={14} /> {order.invoicePhoto ? '🔄 Cambiar Factura' : '📄 Subir Factura'}
-                                  </button>
-                                )}
-
                                 {canCollectCashOrCard && (
                                   <button 
                                     onClick={() => {
@@ -1643,17 +1643,6 @@ export default function App() {
 
                                 {canManageLogistics && (
                                   <>
-                                    <button 
-                                      onClick={() => {
-                                        setBaseChangeOrderId(order.id);
-                                        setBaseChangeAmount(order.baseChangeRecord?.amount || '');
-                                        setBaseChangeModalOpen(true);
-                                      }}
-                                      className="bg-cyan-600 hover:bg-cyan-700 text-white font-bold px-3 py-2 rounded-xl text-xs flex items-center gap-1 shadow"
-                                    >
-                                      <Banknote size={14} /> Vuelto al Repartidor
-                                    </button>
-
                                     <button 
                                       onClick={() => {
                                         setChangeOrderId(order.id);
@@ -1676,18 +1665,6 @@ export default function App() {
                                     </button>
                                   </>
                                 )}
-
-                                {userRole === 'admin' && (
-                                  <button 
-                                    onClick={() => {
-                                      setCorruptOrderId(order.id);
-                                      setCorruptModalOpen(true);
-                                    }}
-                                    className="bg-red-600 hover:bg-red-700 text-white font-bold px-3 py-2 rounded-xl text-xs flex items-center gap-1 shadow"
-                                  >
-                                    <ShieldAlert size={14} /> Pago Corrupto
-                                  </button>
-                                )}
                               </div>
                             </div>
 
@@ -1697,51 +1674,53 @@ export default function App() {
                     </div>
                   )}
 
-                  {/* NUEVA PESTAÑA: MÉTODOS DE PAGO (QR / INFORMACIÓN) */}
+                  {/* PESTAÑA: MÉTODOS DE PAGO Y QR (Accesible para Choferes y Admins) */}
                   {adminSubTab === 'paymethods' && (
                     <div className="space-y-6">
-                      <div className="bg-cyan-50 border border-cyan-200 p-5 rounded-2xl space-y-4">
-                        <h3 className="font-bold text-base text-cyan-900 flex items-center gap-2">
-                          <QrCode size={20} className="text-cyan-700" /> Registrar Nuevo Método de Pago / Código QR
-                        </h3>
-                        <form onSubmit={handleSavePaymentMethod} className="space-y-3">
-                          <div>
-                            <label className="text-xs font-bold text-gray-700">Título / Nombre del Método (Ej. Yape / BCP / Transferencia): *</label>
-                            <input 
-                              type="text" 
-                              value={newPayTitle} 
-                              onChange={e => setNewPayTitle(e.target.value)} 
-                              placeholder="Ej. Yape - 987654321" 
-                              className="w-full border p-2 rounded-lg text-xs bg-white" 
-                            />
-                          </div>
-                          <div>
-                            <label className="text-xs font-bold text-gray-700">Descripción / Información de la Cuenta: *</label>
-                            <textarea 
-                              rows="2" 
-                              value={newPayDesc} 
-                              onChange={e => setNewPayDesc(e.target.value)} 
-                              placeholder="Ej. Titular: Juan Pérez, RUC/DNI: 12345678, Número: 987654321" 
-                              className="w-full border p-2 rounded-lg text-xs bg-white" 
-                            />
-                          </div>
-                          <div className="space-y-1">
-                            <label className="text-xs font-bold text-gray-700">Imagen / Código QR (Opcional):</label>
-                            <label className="cursor-pointer bg-white border-2 border-dashed border-cyan-400 text-gray-800 font-bold py-2 px-3 rounded-lg flex items-center justify-center gap-2 text-xs">
-                              <Upload size={14} /> <span>{newPayImage ? '✅ Imagen / QR cargado' : 'Subir Imagen o QR'}</span>
-                              <input type="file" accept="image/*" onChange={newPayImageUploadHandler => handleNewPayImageUpload(newPayImageUploadHandler)} className="hidden" />
-                            </label>
-                          </div>
-                          <button type="submit" className="bg-cyan-700 hover:bg-cyan-800 text-white font-bold px-4 py-2.5 rounded-xl text-xs shadow transition">
-                            💾 Registrar Método de Pago
-                          </button>
-                        </form>
-                      </div>
+                      {userRole === 'admin' && (
+                        <div className="bg-cyan-50 border border-cyan-200 p-5 rounded-2xl space-y-4">
+                          <h3 className="font-bold text-base text-cyan-900 flex items-center gap-2">
+                            <QrCode size={20} className="text-cyan-700" /> Registrar Nuevo Método de Pago / Código QR
+                          </h3>
+                          <form onSubmit={handleSavePaymentMethod} className="space-y-3">
+                            <div>
+                              <label className="text-xs font-bold text-gray-700">Título / Nombre del Método (Ej. Yape / BCP / Transferencia): *</label>
+                              <input 
+                                type="text" 
+                                value={newPayTitle} 
+                                onChange={e => setNewPayTitle(e.target.value)} 
+                                placeholder="Ej. Yape - 987654321" 
+                                className="w-full border p-2 rounded-lg text-xs bg-white" 
+                              />
+                            </div>
+                            <div>
+                              <label className="text-xs font-bold text-gray-700">Descripción / Información de la Cuenta: *</label>
+                              <textarea 
+                                rows="2" 
+                                value={newPayDesc} 
+                                onChange={e => setNewPayDesc(e.target.value)} 
+                                placeholder="Ej. Titular: Juan Pérez, RUC/DNI: 12345678, Número: 987654321" 
+                                className="w-full border p-2 rounded-lg text-xs bg-white" 
+                              />
+                            </div>
+                            <div className="space-y-1">
+                              <label className="text-xs font-bold text-gray-700">Imagen / Código QR (Opcional):</label>
+                              <label className="cursor-pointer bg-white border-2 border-dashed border-cyan-400 text-gray-800 font-bold py-2 px-3 rounded-lg flex items-center justify-center gap-2 text-xs">
+                                <Upload size={14} /> <span>{newPayImage ? '✅ Imagen / QR cargado' : 'Subir Imagen o QR'}</span>
+                                <input type="file" accept="image/*" onChange={handleNewPayImageUpload} className="hidden" />
+                              </label>
+                            </div>
+                            <button type="submit" className="bg-cyan-700 hover:bg-cyan-800 text-white font-bold px-4 py-2.5 rounded-xl text-xs shadow transition">
+                              💾 Registrar Método de Pago
+                            </button>
+                          </form>
+                        </div>
+                      )}
 
                       <div className="space-y-4">
-                        <h4 className="font-bold text-sm text-gray-800">Métodos de Pago Registrados (Visibles para Choferes y Personal):</h4>
+                        <h4 className="font-bold text-sm text-gray-800">💳 Métodos de Pago y Códigos QR Disponibles para Cobros:</h4>
                         {paymentMethodsList.length === 0 ? (
-                          <div className="text-center py-12 text-gray-400 text-sm">No hay métodos de pago registrados todavía.</div>
+                          <div className="text-center py-12 text-gray-400 text-sm">No hay métodos de pago registrados todavía por el administrador.</div>
                         ) : (
                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                             {paymentMethodsList.map(method => (
@@ -1751,13 +1730,15 @@ export default function App() {
                                   <p className="text-xs text-gray-600 whitespace-pre-wrap">{method.description}</p>
                                   {method.image && (
                                     <button onClick={() => setPreviewImage(method.image)} className="mt-2 text-xs text-blue-600 underline font-bold flex items-center gap-1">
-                                      <Eye size={12} /> Ver QR / Imagen
+                                      <Eye size={12} /> Ver QR / Imagen Grande
                                     </button>
                                   )}
                                 </div>
-                                <button onClick={() => handleDeletePaymentMethod(method.id)} className="self-end bg-red-100 text-red-700 hover:bg-red-200 p-1.5 rounded-lg text-xs font-bold flex items-center gap-1">
-                                  <Trash2 size={14} /> Eliminar
-                                </button>
+                                {userRole === 'admin' && (
+                                  <button onClick={() => handleDeletePaymentMethod(method.id)} className="self-end bg-red-100 text-red-700 hover:bg-red-200 p-1.5 rounded-lg text-xs font-bold flex items-center gap-1">
+                                    <Trash2 size={14} /> Eliminar
+                                  </button>
+                                )}
                               </div>
                             ))}
                           </div>
@@ -1766,7 +1747,7 @@ export default function App() {
                     </div>
                   )}
 
-                  {adminSubTab === 'refunds' && (
+                  {adminSubTab === 'refunds' && userRole !== 'chofer' && (
                     <div className="space-y-4">
                       <h3 className="font-bold text-base text-purple-800 flex items-center gap-2">
                         <RefreshCw size={20} /> Gestión de Devolución de Dinero a Clientes
@@ -1930,7 +1911,7 @@ export default function App() {
                     </div>
                   )}
 
-                  {adminSubTab === 'corrupt' && (
+                  {adminSubTab === 'corrupt' && userRole === 'admin' && (
                     <div className="space-y-4">
                       <h3 className="font-bold text-base text-red-700 flex items-center gap-2">
                         <ShieldAlert size={20} /> Clientes con Pagos Corruptos y Bloqueados
@@ -1970,7 +1951,7 @@ export default function App() {
                     </div>
                   )}
 
-                  {adminSubTab === 'accounting' && (
+                  {adminSubTab === 'accounting' && userRole !== 'chofer' && (
                     <div className="space-y-6">
                       <div className="bg-green-50 border p-5 rounded-2xl flex justify-between items-center">
                         <div>
@@ -1991,61 +1972,11 @@ export default function App() {
                       </div>
                     </div>
                   )}
-
-                  {adminSubTab === 'returns' && (
-                    <div className="space-y-4">
-                      <h3 className="font-bold text-base text-gray-800">Devoluciones de Pedidos Completos (No Entregados)</h3>
-                      {returnOrders.map(order => (
-                        <div key={order.id} className="border border-red-200 p-4 rounded-xl bg-red-50 flex justify-between items-center text-xs">
-                          <div>
-                            <p className="font-bold text-gray-800">{order.clientName}</p>
-                            <p className="text-red-700 font-bold">⚠️ Motivo: {order.failReason}</p>
-                          </div>
-                          <button onClick={() => { setReturnOrderId(order.id); setReturnModalOpen(true); }} className="bg-red-600 text-white font-bold px-3 py-2 rounded-lg">
-                            Subir Capture Devolución
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
                 </div>
               </div>
             )}
 
             {/* MODALES */}
-            {baseChangeModalOpen && (
-              <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-                <div className="bg-white p-6 rounded-2xl max-w-md w-full shadow-2xl space-y-4">
-                  <h3 className="font-bold text-base text-cyan-700 flex items-center gap-2">
-                    <Banknote size={20} /> Vuelto Entregado al Repartidor (Base)
-                  </h3>
-                  <p className="text-xs text-gray-600">Ingrese el monto de dinero base que se le entregó al repartidor para dar cambio y adjunte la foto correspondiente:</p>
-
-                  <input 
-                    type="number"
-                    step="0.01"
-                    value={baseChangeAmount}
-                    onChange={e => setBaseChangeAmount(e.target.value)}
-                    placeholder="Ej. 20.00"
-                    className="w-full border p-2.5 rounded-lg text-sm font-bold text-cyan-900"
-                  />
-
-                  <div className="space-y-1 bg-cyan-50 p-3 rounded-xl border border-cyan-200 text-xs">
-                    <p className="font-bold text-cyan-900 flex items-center gap-1"><Camera size={14} /> Foto del Vuelto / Dinero Base: *</p>
-                    <label className="cursor-pointer bg-white border-2 border-dashed border-cyan-400 text-gray-800 font-bold py-2 px-2 rounded-lg flex items-center justify-center gap-1">
-                      <Upload size={14} /> <span>{baseChangeProofPhoto ? '✅ Foto cargada' : 'Seleccionar foto'}</span>
-                      <input type="file" accept="image/*" onChange={handleBaseChangeProofUpload} className="hidden" />
-                    </label>
-                  </div>
-
-                  <div className="flex justify-end gap-2 pt-2">
-                    <button onClick={() => { setBaseChangeModalOpen(false); setBaseChangeOrderId(null); setBaseChangeAmount(''); setBaseChangeProofPhoto(''); }} className="bg-gray-200 text-gray-700 font-bold px-4 py-2 rounded-lg text-xs">Cancelar</button>
-                    <button onClick={handleSaveBaseChange} className="bg-cyan-600 hover:bg-cyan-700 text-white font-bold px-4 py-2 rounded-lg text-xs shadow">Guardar Vuelto Base</button>
-                  </div>
-                </div>
-              </div>
-            )}
-
             {changeModalOpen && (
               <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
                 <div className="bg-white p-6 rounded-2xl max-w-md w-full shadow-2xl space-y-4">
@@ -2074,39 +2005,6 @@ export default function App() {
                   <div className="flex justify-end gap-2 pt-2">
                     <button onClick={() => { setChangeModalOpen(false); setChangeOrderId(null); setChangeAmountGiven(''); setChangeProofPhoto(''); }} className="bg-gray-200 text-gray-700 font-bold px-4 py-2 rounded-lg text-xs">Cancelar</button>
                     <button onClick={handleSaveChangeGiven} className="bg-teal-600 hover:bg-teal-700 text-white font-bold px-4 py-2 rounded-lg text-xs shadow">Guardar Vuelto Entregado</button>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {refundModalOpen && (
-              <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-                <div className="bg-white p-6 rounded-2xl max-w-md w-full shadow-2xl space-y-4">
-                  <h3 className="font-bold text-base text-purple-700 flex items-center gap-2">
-                    <RefreshCw size={20} /> Registrar Devolución de Dinero al Cliente
-                  </h3>
-                  <p className="text-xs text-gray-600">Ingrese el monto del reembolso por transferencia y adjunte el comprobante de pago:</p>
-
-                  <input 
-                    type="number"
-                    step="0.01"
-                    value={refundAmount}
-                    onChange={e => setRefundAmount(e.target.value)}
-                    placeholder="Monto a devolver (Ej. 10.00)"
-                    className="w-full border p-2.5 rounded-lg text-sm font-bold text-purple-900"
-                  />
-
-                  <div className="space-y-1 bg-purple-50 p-3 rounded-xl border border-purple-200 text-xs">
-                    <p className="font-bold text-purple-900 flex items-center gap-1"><Camera size={14} /> Foto del Comprobante de Reembolso: *</p>
-                    <label className="cursor-pointer bg-white border-2 border-dashed border-purple-400 text-gray-800 font-bold py-2 px-2 rounded-lg flex items-center justify-center gap-1">
-                      <Upload size={14} /> <span>{refundProofPhoto ? '✅ Comprobante cargado' : 'Seleccionar foto de transferencia'}</span>
-                      <input type="file" accept="image/*" onChange={handleRefundProofPhotoUpload} className="hidden" />
-                    </label>
-                  </div>
-
-                  <div className="flex justify-end gap-2 pt-2">
-                    <button onClick={() => { setRefundModalOpen(false); setRefundOrderId(null); setRefundAmount(''); setRefundProofPhoto(''); }} className="bg-gray-200 text-gray-700 font-bold px-4 py-2 rounded-lg text-xs">Cancelar</button>
-                    <button onClick={handleSaveRefundRecord} className="bg-purple-600 hover:bg-purple-700 text-white font-bold px-4 py-2 rounded-lg text-xs shadow">Guardar y Publicar</button>
                   </div>
                 </div>
               </div>
@@ -2153,28 +2051,6 @@ export default function App() {
               </div>
             )}
 
-            {corruptModalOpen && (
-              <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-                <div className="bg-white p-6 rounded-2xl max-w-md w-full shadow-2xl space-y-4">
-                  <h3 className="font-bold text-base text-red-700 flex items-center gap-2">
-                    <ShieldAlert size={20} /> Registrar Pago Corrupto / Incidencia
-                  </h3>
-                  <textarea rows="3" value={corruptReason} onChange={e => setCorruptReason(e.target.value)} placeholder="Motivo..." className="w-full border p-2.5 rounded-lg text-xs"></textarea>
-                  <div className="space-y-1 bg-red-50 p-3 rounded-xl border border-red-200 text-xs">
-                    <p className="font-bold text-red-900 flex items-center gap-1"><Camera size={14} /> [Foto del Dinero / Pago Corrupto]: *</p>
-                    <label className="cursor-pointer bg-white border-2 border-dashed border-red-400 text-gray-800 font-bold py-2 px-2 rounded-lg flex items-center justify-center gap-1">
-                      <Upload size={14} /> <span>{corruptPhoto ? '✅ Foto cargada' : 'Seleccionar foto'}</span>
-                      <input type="file" accept="image/*" onChange={handleCorruptPhotoUpload} className="hidden" />
-                    </label>
-                  </div>
-                  <div className="flex justify-end gap-2 pt-2">
-                    <button onClick={() => setCorruptModalOpen(false)} className="bg-gray-200 text-gray-700 font-bold px-4 py-2 rounded-lg text-xs">Cancelar</button>
-                    <button onClick={handleSaveCorruptPayment} className="bg-red-600 hover:bg-red-700 text-white font-bold px-4 py-2 rounded-lg text-xs shadow">Bloquear</button>
-                  </div>
-                </div>
-              </div>
-            )}
-
             {payModalOpen && (
               <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
                 <div className="bg-white p-6 rounded-2xl max-w-md w-full shadow-2xl space-y-4">
@@ -2187,7 +2063,6 @@ export default function App() {
                     <button type="button" onClick={() => setSelectedPayMethodAdmin('Pago Digital')} className={`p-2.5 rounded-xl border font-bold text-xs ${selectedPayMethodAdmin === 'Pago Digital' ? 'bg-purple-600 text-white' : 'bg-gray-50'}`}>📱 Digital</button>
                   </div>
 
-                  {/* VISUALIZAR MÉTODOS DE PAGO Y QR REGISTRADOS PARA EL CHOFER / CAJERA */}
                   {paymentMethodsList.length > 0 && (
                     <div className="bg-cyan-50 p-3 rounded-xl border border-cyan-200 space-y-2 max-h-40 overflow-y-auto">
                       <p className="font-bold text-cyan-900 text-xs flex items-center gap-1">
@@ -2235,39 +2110,6 @@ export default function App() {
               </div>
             )}
 
-            {invoiceModalOpen && (
-              <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-                <div className="bg-white p-6 rounded-2xl max-w-md w-full shadow-2xl space-y-4">
-                  <h3 className="font-bold text-base text-indigo-700 flex items-center gap-2">
-                    <Receipt size={20} /> Subir Factura Oficial
-                  </h3>
-                  <label className="cursor-pointer bg-indigo-50 border-2 border-dashed border-indigo-400 text-xs font-bold py-3 px-3 rounded-xl flex flex-col items-center justify-center">
-                    <Upload size={18} /> {invoicePhoto ? '✅ Factura cargada' : 'Elegir foto de la factura'}
-                    <input type="file" accept="image/*" onChange={handleInvoicePhotoUpload} className="hidden" />
-                  </label>
-                  <div className="flex justify-end gap-2">
-                    <button onClick={() => setInvoiceModalOpen(false)} className="bg-gray-200 px-4 py-2 rounded-lg text-xs">Cancelar</button>
-                    <button onClick={handleSaveInvoice} className="bg-indigo-600 text-white px-4 py-2 rounded-lg text-xs font-bold">Guardar</button>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {finalAmountModalOpen && (
-              <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-                <div className="bg-white p-6 rounded-2xl max-w-md w-full shadow-2xl space-y-4">
-                  <h3 className="font-bold text-base text-emerald-700 flex items-center gap-2">
-                    <DollarSign size={20} /> Ingresar Total a Pagar Exacto
-                  </h3>
-                  <input type="number" step="0.01" value={exactFinalAmount} onChange={e => setExactFinalAmount(e.target.value)} placeholder="Ej. 25.50" className="w-full border p-2.5 rounded-lg text-sm font-bold" />
-                  <div className="flex justify-end gap-2">
-                    <button onClick={() => setFinalAmountModalOpen(false)} className="bg-gray-200 px-4 py-2 rounded-lg text-xs">Cancelar</button>
-                    <button onClick={handleSaveFinalAmount} className="bg-emerald-600 text-white px-4 py-2 rounded-lg text-xs font-bold">Guardar</button>
-                  </div>
-                </div>
-              </div>
-            )}
-
             {failModalOpen && (
               <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
                 <div className="bg-white p-6 rounded-2xl max-w-md w-full shadow-2xl space-y-4">
@@ -2276,22 +2118,6 @@ export default function App() {
                   <div className="flex justify-end gap-2">
                     <button onClick={() => setFailModalOpen(false)} className="bg-gray-200 px-4 py-2 rounded-lg text-xs">Cancelar</button>
                     <button onClick={handleSaveFailReason} className="bg-red-600 text-white px-4 py-2 rounded-lg text-xs font-bold">Guardar</button>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {returnModalOpen && (
-              <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-                <div className="bg-white p-6 rounded-2xl max-w-md w-full shadow-2xl space-y-4">
-                  <h3 className="font-bold text-base text-green-700">Devolución de Dinero</h3>
-                  <label className="cursor-pointer bg-gray-100 border-2 border-dashed border-gray-300 text-xs font-bold py-3 px-3 rounded-xl flex flex-col items-center justify-center">
-                    <Upload size={18} /> {returnProof ? '✅ Capture listo' : 'Subir capture'}
-                    <input type="file" accept="image/*" onChange={handleReturnProofUpload} className="hidden" />
-                  </label>
-                  <div className="flex justify-end gap-2">
-                    <button onClick={() => setReturnModalOpen(false)} className="bg-gray-200 px-4 py-2 rounded-lg text-xs">Cancelar</button>
-                    <button onClick={handleSaveReturnProof} className="bg-green-600 text-white font-bold px-4 py-2 rounded-lg text-xs font-bold">Confirmar</button>
                   </div>
                 </div>
               </div>
