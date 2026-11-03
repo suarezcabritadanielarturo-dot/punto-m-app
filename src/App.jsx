@@ -145,7 +145,7 @@ export default function App() {
 
   const cartTotal = cart.reduce((sum, item) => sum + (item.price * item.qty), 0);
 
-  // Función mejorada con extracción limpia de JSON
+  // Función robusta de búsqueda inteligente local sin fallos de JSON
   const handleClientAiOrder = async () => {
     if (!clientPrompt.trim()) return;
 
@@ -153,63 +153,53 @@ export default function App() {
     setAiOrderFeedback('');
 
     try {
-      const catalogList = products.map(p => `- ID: ${p.id}, Nombre: ${p.name}, Precio: ${p.price}`).join('\n');
-
-      const promptText = `Eres un asistente de compras de un mercado. El cliente ha escrito: "${clientPrompt}".
-      
-      Catálogo disponible:
-      ${catalogList}
-
-      Identifica qué productos desea y su cantidad. Si pide algo que no está en la lista, ponlo en notFound.
-      DEVUELVE ÚNICAMENTE UN JSON VÁLIDO, sin bloques de código markdown, sin explicaciones, exactamente con esta estructura:
-      {"found": [{"id": "...", "qty": 1}], "notFound": ["nombre"]}
-      Si no hay nada, devuelve: {"found": [], "notFound": []}`;
-
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: promptText }] }]
-        })
-      });
-
-      const data = await response.json();
-      const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
-      
-      // Extrae la cadena JSON evitando errores por formato o comentarios extra de la IA
-      const jsonMatch = rawText.match(/\{[\s\S]*\}/);
-      const cleanJsonStr = jsonMatch ? jsonMatch[0] : '{}';
-      const result = JSON.parse(cleanJsonStr);
-
+      const textLower = clientPrompt.toLowerCase();
+      let foundAny = false;
+      let notFoundItems = [];
       let feedbackMessages = [];
 
-      if (result.found && Array.isArray(result.found) && result.found.length > 0) {
-        result.found.forEach(req => {
-          const productFound = products.find(p => p.id === req.id);
-          if (productFound) {
-            for (let i = 0; i < (req.qty || 1); i++) {
-              addToCart(productFound);
-            }
+      // Evalúa los productos existentes en el catálogo
+      products.forEach(prod => {
+        const prodNameLower = prod.name.toLowerCase();
+        const mainKeyword = prodNameLower.split(' ')[0]; // Palabra principal (harina, aceite, arroz, azúcar)
+
+        if (textLower.includes(mainKeyword) || textLower.includes(prodNameLower)) {
+          addToCart(prod);
+          foundAny = true;
+        }
+      });
+
+      // Detecta palabras clave de productos no encontrados
+      const stopWords = ['de', 'kg', '1kg', '1l', 'litro', 'kilos', 'un', 'una', 'quiero', 'dame', 'por', 'favor', 'y', 'el', 'la', 'los', 'las'];
+      const userWords = textLower.split(/[\s,]+/);
+
+      userWords.forEach(word => {
+        if (word.length > 3 && !stopWords.includes(word)) {
+          const matchExists = products.some(p => p.name.toLowerCase().includes(word));
+          if (!matchExists && !notFoundItems.includes(word)) {
+            notFoundItems.push(word);
           }
-        });
+        }
+      });
+
+      if (foundAny) {
+        feedbackMessages.push("✅ ¡Productos disponibles agregados al carrito!");
       }
 
-      if (result.notFound && Array.isArray(result.notFound) && result.notFound.length > 0) {
-        feedbackMessages.push(`⚠️ Los siguientes productos no los tenemos en existencia: ${result.notFound.join(', ')}.`);
+      if (notFoundItems.length > 0) {
+        feedbackMessages.push(`⚠️ Los siguientes productos no los tenemos en existencia: ${notFoundItems.join(', ')}.`);
       }
 
-      if (result.found && result.found.length > 0) {
-        feedbackMessages.unshift("✅ ¡Productos disponibles agregados al carrito!");
-      } else if (feedbackMessages.length === 0) {
-        feedbackMessages.push("No se pudieron identificar productos en tu mensaje.");
+      if (!foundAny && notFoundItems.length === 0) {
+        feedbackMessages.push("No se pudieron identificar productos en tu mensaje. Intenta escribir el nombre exacto.");
       }
 
       setAiOrderFeedback(feedbackMessages.join(' '));
       setClientPrompt('');
 
     } catch (error) {
-      console.error("Error en IA de pedidos:", error);
-      setAiOrderFeedback("Hubo un error al procesar tu pedido con la IA. Inténtalo de nuevo.");
+      console.error("Error en asistente de pedidos:", error);
+      setAiOrderFeedback("Hubo un error al procesar tu pedido.");
     } finally {
       setIsAiOrdering(false);
     }
