@@ -30,7 +30,8 @@ import {
   Truck,
   PackageCheck,
   Camera,
-  Receipt
+  Receipt,
+  ArrowLeft
 } from 'lucide-react';
 import { auth, googleProvider, db, signInWithPopup, signOut } from './firebase';
 import { 
@@ -71,22 +72,22 @@ export default function App() {
   const [paymentPreference, setPaymentPreference] = useState('Efectivo');
   const [paymentTiming, setPaymentTiming] = useState('Contra Entrega');
 
+  // Control para asegurar que el usuario envió por WhatsApp antes de ver el seguimiento
+  const [whatsappSent, setWhatsappSent] = useState(false);
+
   const [failModalOpen, setFailModalOpen] = useState(false);
   const [failOrderId, setFailOrderId] = useState(null);
   const [failReason, setFailReason] = useState('');
 
-  // Modal para Cobro y Pago
   const [payModalOpen, setPayModalOpen] = useState(false);
   const [payOrderId, setPayOrderId] = useState(null);
   const [selectedPayMethodAdmin, setSelectedPayMethodAdmin] = useState('');
   const [cashPhoto, setCashPhoto] = useState('');
 
-  // Modal Independiente para Subir Factura
   const [invoiceModalOpen, setInvoiceModalOpen] = useState(false);
   const [invoiceOrderId, setInvoiceOrderId] = useState(null);
   const [invoicePhoto, setInvoicePhoto] = useState('');
 
-  // Modal para Ingresar Monto Definitivo tras Facturar
   const [finalAmountModalOpen, setFinalAmountModalOpen] = useState(false);
   const [finalAmountOrderId, setFinalAmountOrderId] = useState(null);
   const [exactFinalAmount, setExactFinalAmount] = useState('');
@@ -108,10 +109,6 @@ export default function App() {
     phone: '+58 424 5719928',
     footerMessage: '¡Gracias por su compra en PUNTO M! Conservar comprobante.'
   });
-
-  const [newProduct, setNewProduct] = useState({ name: '', price: '', category: 'Viveres', image: '' });
-  const [aiFileText, setAiFileText] = useState('');
-  const [isProcessingFile, setIsProcessingFile] = useState(false);
 
   const [clientPrompt, setClientPrompt] = useState('');
   const [isAiOrdering, setIsAiOrdering] = useState(false);
@@ -298,7 +295,7 @@ export default function App() {
       status: 'Pendiente',
       isPaid: false,
       paymentMethod: '',
-      invoicePhoto: '', // Campo independiente para la factura
+      invoicePhoto: '',
       cashPhoto: '',
       failReason: '',
       returnStatus: 'No aplica',
@@ -308,19 +305,11 @@ export default function App() {
 
     try {
       await addDoc(collection(db, 'orders'), newOrderData);
+      setWhatsappSent(false); // Reiniciamos el estado para obligar al clic de WhatsApp
       setView('receipt');
     } catch (err) {
       console.error(err);
       setView('receipt');
-    }
-  };
-
-  const handleImageFileUpload = (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => setNewProduct(prev => ({ ...prev, image: reader.result }));
-      reader.readAsDataURL(file);
     }
   };
 
@@ -385,7 +374,6 @@ export default function App() {
     }
   };
 
-  // CONFIRMAR PAGO DESDE EL ADMIN
   const handleConfirmAdminPayment = async () => {
     if (!selectedPayMethodAdmin) {
       alert("Selecciona la opción de pago.");
@@ -408,7 +396,6 @@ export default function App() {
     setSelectedPayMethodAdmin('');
   };
 
-  // GUARDAR FACTURA INDEPENDIENTE
   const handleSaveInvoice = async () => {
     if (!invoicePhoto) {
       alert("⚠️ Sube la foto o archivo de la factura.");
@@ -431,7 +418,6 @@ export default function App() {
     }
   };
 
-  // GUARDAR MONTO DEFINITIVO DE LA FACTURA
   const handleSaveFinalAmount = async () => {
     const parsedAmount = parseFloat(exactFinalAmount);
     if (isNaN(parsedAmount) || parsedAmount <= 0) {
@@ -713,7 +699,7 @@ export default function App() {
           </div>
         )}
 
-        {/* SEGUIMIENTO DE PEDIDOS CON VISUALIZACIÓN DE FACTURA INDEPENDIENTE */}
+        {/* SEGUIMIENTO DE PEDIDOS */}
         {view === 'tracking' && (
           <div className="max-w-3xl mx-auto space-y-6">
             <div className="bg-white p-6 rounded-2xl shadow border">
@@ -765,7 +751,6 @@ export default function App() {
                           </div>
                         )}
 
-                        {/* VISUALIZACIÓN DE LA FACTURA INDEPENDIENTE */}
                         {order.invoicePhoto && (
                           <div className="bg-green-50 border border-green-200 p-3 rounded-xl text-xs flex justify-between items-center">
                             <p className="font-bold text-green-900 flex items-center gap-1.5">
@@ -794,26 +779,81 @@ export default function App() {
           </div>
         )}
 
+        {/* RECIBO CON LISTA DE PRODUCTOS CON PRECIOS, BOTÓN MODIFICAR Y BOTÓN DE WHATSAPP OBLIGATORIO */}
         {view === 'receipt' && (
-          <div className="max-w-md mx-auto bg-white p-8 rounded-xl shadow-2xl border">
-            <div className="text-center border-b pb-4 mb-4">
+          <div className="max-w-md mx-auto bg-white p-6 rounded-2xl shadow-2xl border space-y-4">
+            <div className="text-center border-b pb-3">
               <div className="inline-block bg-[#0b6b38] px-4 py-1 rounded text-white font-black text-xl mb-1">PUNTO M</div>
               <p className="text-xs text-gray-500">Tel: {companyHeader.phone}</p>
               <p className="text-xs font-bold text-[#0b6b38] mt-2">Cliente: {user?.name} | Telf: {clientPhone}</p>
               <p className="text-xs text-amber-700 font-medium mt-1">⚠️ Este es un cálculo aproximado. El monto definitivo se confirmará tras la facturación.</p>
             </div>
-            <div className="space-y-2">
-              <button onClick={() => setView('tracking')} className="w-full bg-[#0b6b38] text-white font-bold py-2.5 rounded-lg text-sm shadow">
-                Ver Seguimiento de mi Pedido
+
+            {/* LISTA DE PRODUCTOS CON PRECIOS JUSTO ABAJO DEL TEXTO */}
+            <div className="bg-gray-50 p-3 rounded-xl border max-h-48 overflow-y-auto space-y-2">
+              <p className="text-xs font-bold text-gray-700 border-b pb-1">Detalle del Pedido:</p>
+              {cart.map(item => (
+                <div key={item.id} className="flex justify-between items-center text-xs">
+                  <span>{item.qty}x {item.name}</span>
+                  <span className="font-bold text-green-800">S/ {(item.price * item.qty).toFixed(2)}</span>
+                </div>
+              ))}
+              <div className="border-t pt-2 flex justify-between font-black text-xs text-gray-900">
+                <span>Total Aproximado:</span>
+                <span className="text-green-800">S/ {cartTotal.toFixed(2)}</span>
+              </div>
+            </div>
+
+            <div className="space-y-2 pt-2">
+              {/* BOTÓN OBLIGATORIO DE WHATSAPP (SIN PRECIOS EN EL MENSAJE) */}
+              <a 
+                href={`https://wa.me/584245719928?text=${encodeURIComponent(
+                  `🛒 *NUEVO PEDIDO - PUNTO M*\n` +
+                  `👤 *Cliente:* ${user ? user.name : 'Cliente'}\n` +
+                  `📞 *Teléfono:* ${clientPhone}\n` +
+                  `💳 *Método de Pago:* ${paymentPreference} (${paymentTiming})\n` +
+                  `📅 *Entrega:* ${deliveryDate} a las ${deliveryTime}\n` +
+                  `-----------------------------------\n` +
+                  `📋 *Lista de Productos (Cantidades):*\n` + cart.map(i => `• ${i.qty}x ${i.name}`).join('\n') + `\n` +
+                  `-----------------------------------\n` +
+                  `🔗 *Presione aquí para ver el seguimiento de su pedido en la App:* \nhttps://punto-m-app.vercel.app`
+                )}`}
+                target="_blank"
+                rel="noreferrer"
+                onClick={() => setWhatsappSent(true)}
+                className="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-xl text-center flex items-center justify-center gap-2 text-xs shadow transition"
+              >
+                <Phone size={16} /> Enviar Pedido por WhatsApp
+              </a>
+
+              {/* BOTÓN PARA VER SEGUIMIENTO (SE HABILITA SOLO AL PRESIONAR WHATSAPP) */}
+              <button 
+                onClick={() => {
+                  if (!whatsappSent) {
+                    alert("⚠️ Por favor, envíe primero el pedido por WhatsApp para poder ver su seguimiento.");
+                    return;
+                  }
+                  setView('tracking');
+                }}
+                className={`w-full font-bold py-3 rounded-xl text-xs shadow flex items-center justify-center gap-2 transition ${
+                  whatsappSent ? 'bg-[#0b6b38] hover:bg-[#074825] text-white' : 'bg-gray-300 text-gray-600 cursor-not-allowed'
+                }`}
+              >
+                <Truck size={16} /> Presione aquí para seguir su pedido
               </button>
-              <button onClick={() => setView('catalog')} className="w-full bg-gray-200 text-gray-700 font-bold py-2 rounded-lg text-sm">
-                Volver al Catálogo
+
+              {/* BOTÓN "MODIFICAR" (DEVUELVE AL CATÁLOGO) */}
+              <button 
+                onClick={() => setView('catalog')}
+                className="w-full bg-gray-200 hover:bg-gray-300 text-gray-700 font-bold py-2.5 rounded-xl text-xs flex items-center justify-center gap-1.5 transition"
+              >
+                <ArrowLeft size={14} /> Modificar pedido (Volver atrás)
               </button>
             </div>
           </div>
         )}
 
-        {/* PANEL ADMIN CON BOTONES SEPARADOS PARA PAGO, FACTURA Y MONTO */}
+        {/* PANEL ADMIN */}
         {view === 'admin' && userRole === 'admin' && (
           <div className="space-y-6 max-w-5xl mx-auto">
             <div className="bg-white p-6 rounded-2xl shadow border">
@@ -881,7 +921,6 @@ export default function App() {
                         </div>
                       </div>
 
-                      {/* ZONA INFERIOR: BOTONES SEPARADOS PARA PAGO, SUBIR FACTURA Y MONTO DEFINITIVO */}
                       <div className="bg-gray-50 p-3 rounded-xl border flex flex-col sm:flex-row justify-between items-center gap-3">
                         <div className="text-xs">
                           <p className="font-bold text-gray-700">Gestión Administrativa:</p>
@@ -889,7 +928,6 @@ export default function App() {
                         </div>
 
                         <div className="flex flex-wrap items-center gap-2">
-                          {/* 1. Botón Marcar Pagado */}
                           <button 
                             onClick={() => {
                               setPayOrderId(order.id);
@@ -903,7 +941,6 @@ export default function App() {
                             <CreditCard size={14} /> {order.isPaid ? '✅ Pago Registrado' : '💵 Registrar Pago'}
                           </button>
 
-                          {/* 2. Botón Subir Factura Independiente */}
                           <button 
                             onClick={() => {
                               setInvoiceOrderId(order.id);
@@ -914,7 +951,6 @@ export default function App() {
                             <Receipt size={14} /> {order.invoicePhoto ? '🔄 Cambiar Factura' : '📄 Subir Factura'}
                           </button>
 
-                          {/* 3. Botón Ingresar Monto Definitivo */}
                           <button 
                             onClick={() => {
                               setFinalAmountOrderId(order.id);
@@ -975,7 +1011,7 @@ export default function App() {
           </div>
         )}
 
-        {/* MODAL REGISTRAR PAGO (CON FOTO DE EFECTIVO SI APLICA) */}
+        {/* MODAL REGISTRAR PAGO */}
         {payModalOpen && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
             <div className="bg-white p-6 rounded-2xl max-w-md w-full shadow-2xl space-y-4">
@@ -1014,7 +1050,7 @@ export default function App() {
           </div>
         )}
 
-        {/* MODAL INDEPENDIENTE PARA SUBIR FACTURA */}
+        {/* MODAL SUBIR FACTURA */}
         {invoiceModalOpen && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
             <div className="bg-white p-6 rounded-2xl max-w-md w-full shadow-2xl space-y-4">
