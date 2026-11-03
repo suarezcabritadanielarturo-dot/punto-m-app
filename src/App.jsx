@@ -26,7 +26,9 @@ import {
   PieChart,
   RefreshCw,
   Lock,
-  RotateCcw
+  RotateCcw,
+  Truck,
+  PackageCheck
 } from 'lucide-react';
 import { auth, googleProvider, db, signInWithPopup, signOut } from './firebase';
 import { 
@@ -54,7 +56,7 @@ const BASE_PRODUCTS = [
 export default function App() {
   const [user, setUser] = useState(null);
   const [userRole, setUserRole] = useState('client'); 
-  const [view, setView] = useState('catalog'); 
+  const [view, setView] = useState('catalog'); // 'catalog', 'tracking', 'receipt', 'admin'
   const [adminSubTab, setAdminSubTab] = useState('orders');
   
   const [products, setProducts] = useState(BASE_PRODUCTS.map((p, i) => ({ id: String(i + 1), ...p })));
@@ -108,7 +110,6 @@ export default function App() {
   const [locationLoading, setLocationLoading] = useState(false);
   const [isResetting, setIsResetting] = useState(false);
 
-  // Fecha actual en formato YYYY-MM-DD para bloquear fechas pasadas en el input HTML
   const todayStr = new Date().toISOString().split('T')[0];
 
   useEffect(() => {
@@ -268,7 +269,6 @@ export default function App() {
     );
   };
 
-  // VALIDACIÓN DE FECHA, HORA Y HORARIO DE ATENCIÓN (10 AM A 7 PM)
   const handleGenerateReceipt = async () => {
     if (!user) {
       alert("⚠️ Debe iniciar sesión obligatoriamente antes de realizar un pedido.");
@@ -284,7 +284,6 @@ export default function App() {
       return;
     }
 
-    // Validar que la fecha no sea menor a hoy
     const selectedDateObj = new Date(deliveryDate + 'T00:00:00');
     const todayObj = new Date(new Date().toDateString());
     if (selectedDateObj < todayObj) {
@@ -292,18 +291,16 @@ export default function App() {
       return;
     }
 
-    // Validar horario de atención (10:00 AM a 7:00 PM / 10:00 a 19:00)
     const [hours, minutes] = deliveryTime.split(':').map(Number);
     const totalMinutes = hours * 60 + minutes;
-    const openMinutes = 10 * 60; // 10:00 AM
-    const closeMinutes = 19 * 60; // 7:00 PM (19:00)
+    const openMinutes = 10 * 60; 
+    const closeMinutes = 19 * 60; 
 
     if (totalMinutes < openMinutes || totalMinutes > closeMinutes) {
       alert("⚠️ El horario de atención de la tienda es de 10:00 AM a 7:00 PM. Por favor selecciona una hora dentro de este rango.");
       return;
     }
 
-    // Si es hoy, verificar que la hora no sea menor a la actual
     if (deliveryDate === todayStr) {
       const now = new Date();
       const currentMinutes = now.getHours() * 60 + now.getMinutes();
@@ -557,7 +554,7 @@ export default function App() {
     printWindow.document.close();
   };
 
-  const paidOrders = orders.filter(o => o.status === 'Pagado' || o.status === 'Entregado');
+  const paidOrders = orders.filter(o => o.status === 'Pagado' || o.status === 'Alistado' || o.status === 'En Camino' || o.status === 'Entregado');
   const cashTotal = paidOrders.filter(o => o.paymentMethod === 'Efectivo').reduce((sum, o) => sum + Number(o.total), 0);
   const captureOrders = paidOrders.filter(o => o.paymentMethod === 'Transferencia / Capture');
   const captureSystemTotal = captureOrders.reduce((sum, o) => sum + Number(o.total), 0);
@@ -585,6 +582,9 @@ export default function App() {
 
   const uniqueClients = Array.from(new Set(orders.map(o => o.clientEmail || o.clientName))).filter(Boolean);
   const filteredOrders = selectedClientFilter === 'all' ? orders : orders.filter(o => (o.clientEmail === selectedClientFilter || o.clientName === selectedClientFilter));
+  
+  // Pedidos pertenecientes al cliente logueado
+  const myOrders = user ? orders.filter(o => o.clientUid === user.uid || o.clientEmail === user.email) : [];
 
   return (
     <div className="min-h-screen flex flex-col bg-gray-100 text-gray-800">
@@ -599,6 +599,22 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-3">
+            {/* BOTÓN SEGUIMIENTO DE PEDIDOS PARA CLIENTES */}
+            {user && (
+              <button 
+                onClick={() => setView('tracking')}
+                className={`px-3 py-1.5 rounded-lg font-bold text-xs flex items-center gap-1.5 transition ${view === 'tracking' ? 'bg-[#fbc02d] text-black shadow' : 'bg-[#074825] hover:bg-green-700 text-white'}`}
+              >
+                <Truck size={16} /> 
+                <span className="hidden sm:inline">Seguimiento</span>
+                {myOrders.length > 0 && (
+                  <span className="bg-red-500 text-white text-[10px] px-1.5 py-0.2 rounded-full font-black">
+                    {myOrders.length}
+                  </span>
+                )}
+              </button>
+            )}
+
             {user ? (
               <div className="flex items-center gap-3 bg-[#074825] px-3 py-1.5 rounded-full border border-green-700">
                 <img src={user.photo || "https://via.placeholder.com/40"} alt="User" className="w-8 h-8 rounded-full border border-[#fbc02d]" />
@@ -623,9 +639,9 @@ export default function App() {
             ) : (
               <button 
                 onClick={handleLogin}
-                className="bg-[#fbc02d] text-black font-bold px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-yellow-400 transition shadow"
+                className="bg-[#fbc02d] text-black font-bold px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-yellow-400 transition shadow text-xs"
               >
-                <User size={18} /> Entrar con Google
+                <User size={16} /> Entrar con Google
               </button>
             )}
 
@@ -645,6 +661,7 @@ export default function App() {
       </header>
 
       <main className="max-w-6xl mx-auto w-full px-4 py-6 flex-1">
+        {/* VISTA 1: CATÁLOGO DE PRODUCTOS */}
         {view === 'catalog' && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div className="lg:col-span-2 space-y-6">
@@ -756,7 +773,6 @@ export default function App() {
                     <Calendar size={14} className="text-[#0b6b38]" /> Entrega (Horario: 10:00 AM - 7:00 PM): *
                   </p>
                   <div className="grid grid-cols-2 gap-2">
-                    {/* min={todayStr} bloquea fechas anteriores en el calendario */}
                     <input 
                       type="date" 
                       min={todayStr}
@@ -802,7 +818,106 @@ export default function App() {
           </div>
         )}
 
-        {/* RECIBO */}
+        {/* VISTA 2: SEGUIMIENTO DE PEDIDOS PARA EL CLIENTE */}
+        {view === 'tracking' && (
+          <div className="max-w-3xl mx-auto space-y-6">
+            <div className="bg-white p-6 rounded-2xl shadow border">
+              <h2 className="font-bold text-xl text-gray-800 mb-2 flex items-center gap-2 border-b pb-3">
+                <Truck className="text-[#0b6b38]" /> Seguimiento de Mis Pedidos
+              </h2>
+              <p className="text-xs text-gray-500 mb-6">
+                Consulta el estado de preparación y despacho de tus pedidos en tiempo real.
+              </p>
+
+              {myOrders.length === 0 ? (
+                <div className="text-center py-12 bg-gray-50 rounded-xl border">
+                  <ShoppingBag size={36} className="mx-auto text-gray-300 mb-2" />
+                  <p className="text-sm font-bold text-gray-600">No tienes pedidos activos actualmente.</p>
+                  <button onClick={() => setView('catalog')} className="mt-3 bg-[#0b6b38] text-white px-4 py-2 rounded-lg text-xs font-bold">
+                    Ir al Catálogo a Comprar
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-6">
+                  {myOrders.map(order => {
+                    // Mapeo de avance de estados (0 a 100%)
+                    let stepIndex = 1;
+                    if (order.status === 'Pagado') stepIndex = 2;
+                    if (order.status === 'Alistado') stepIndex = 3;
+                    if (order.status === 'En Camino') stepIndex = 4;
+                    if (order.status === 'Entregado') stepIndex = 5;
+                    const isFailed = order.status === 'No se pudo entregar' || order.status === 'Cancelado';
+
+                    return (
+                      <div key={order.id} className="border rounded-2xl p-5 bg-white shadow-sm space-y-4 hover:border-green-300 transition">
+                        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 border-b pb-3">
+                          <div>
+                            <p className="font-bold text-sm text-gray-800">Pedido #{order.id.slice(-6).toUpperCase()}</p>
+                            <p className="text-xs text-gray-500">Entrega programada: <strong>{order.deliveryDate}</strong> a las <strong>{order.deliveryTime}</strong></p>
+                          </div>
+                          <span className={`px-3 py-1 rounded-full font-black text-xs ${
+                            order.status === 'Pendiente' ? 'bg-amber-100 text-amber-800 border border-amber-300' :
+                            order.status === 'Pagado' ? 'bg-blue-100 text-blue-800 border border-blue-300' :
+                            order.status === 'Alistado' ? 'bg-purple-100 text-purple-800 border border-purple-300' :
+                            order.status === 'En Camino' ? 'bg-indigo-100 text-indigo-800 border border-indigo-300' :
+                            order.status === 'Entregado' ? 'bg-green-100 text-green-800 border border-green-300' :
+                            'bg-red-100 text-red-800 border border-red-300'
+                          }`}>
+                            {order.status}
+                          </span>
+                        </div>
+
+                        {/* LÍNEA DE TIEMPO Y PROGRESO DE ESTADO */}
+                        {!isFailed ? (
+                          <div className="py-2">
+                            <div className="flex justify-between items-center text-[10px] font-bold text-gray-500 mb-2">
+                              <span className={stepIndex >= 1 ? 'text-[#0b6b38]' : ''}>1. Registrado</span>
+                              <span className={stepIndex >= 2 ? 'text-blue-600' : ''}>2. Pagado</span>
+                              <span className={stepIndex >= 3 ? 'text-purple-600' : ''}>3. Alistado</span>
+                              <span className={stepIndex >= 4 ? 'text-indigo-600' : ''}>4. En Camino</span>
+                              <span className={stepIndex >= 5 ? 'text-green-600' : ''}>5. Entregado</span>
+                            </div>
+
+                            <div className="w-full bg-gray-200 h-2.5 rounded-full overflow-hidden">
+                              <div 
+                                className={`h-full transition-all duration-500 ${
+                                  stepIndex === 5 ? 'bg-green-600' :
+                                  stepIndex === 4 ? 'bg-indigo-600' :
+                                  stepIndex === 3 ? 'bg-purple-600' :
+                                  stepIndex === 2 ? 'bg-blue-600' : 'bg-amber-500'
+                                }`}
+                                style={{ width: `${(stepIndex / 5) * 100}%` }}
+                              ></div>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="bg-red-50 border border-red-200 p-3 rounded-xl text-xs text-red-800">
+                            <p className="font-bold">⚠️ El pedido no pudo ser entregado o fue cancelado.</p>
+                            {order.failReason && <p className="mt-1">Motivo: {order.failReason}</p>}
+                            {order.returnStatus && <p className="mt-1 font-bold">Estado de reembolso: {order.returnStatus}</p>}
+                          </div>
+                        )}
+
+                        {/* DETALLES DE ITEMS */}
+                        <div className="bg-gray-50 p-3 rounded-xl text-xs space-y-1">
+                          <p className="font-bold text-gray-700">Productos comprados:</p>
+                          <p className="text-gray-600">{order.items ? order.items.map(i => `${i.qty}x ${i.name}`).join(', ') : 'Sin detalle'}</p>
+                          <div className="flex justify-between items-center border-t pt-2 mt-2 font-bold text-gray-800">
+                            <span>Monto Total:</span>
+                            <span className="text-green-800 text-sm">S/ {Number(order.total).toFixed(2)}</span>
+                          </div>
+                        </div>
+
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* VISTA 3: RECIBO */}
         {view === 'receipt' && (
           <div className="max-w-md mx-auto bg-white p-8 rounded-xl shadow-2xl border border-gray-200">
             <div className="text-center border-b pb-4 mb-4">
@@ -858,6 +973,9 @@ export default function App() {
               >
                 <Phone size={18} /> Enviar Pedido por WhatsApp (+58 424-5719928)
               </a>
+              <button onClick={() => setView('tracking')} className="w-full bg-[#0b6b38] text-white font-bold py-2.5 rounded-lg text-sm shadow">
+                Ver Seguimiento de mi Pedido
+              </button>
               <button onClick={() => setView('catalog')} className="w-full bg-gray-200 text-gray-700 font-bold py-2 rounded-lg text-sm">
                 Volver al Catálogo
               </button>
@@ -865,7 +983,7 @@ export default function App() {
           </div>
         )}
 
-        {/* PANEL ADMIN */}
+        {/* VISTA 4: PANEL ADMIN CON NUEVOS BOTONES (ALISTADO Y EN CAMINO) */}
         {view === 'admin' && userRole === 'admin' && (
           <div className="space-y-6 max-w-5xl mx-auto">
             <div className="bg-white p-6 rounded-2xl shadow border">
@@ -906,6 +1024,7 @@ export default function App() {
                 </div>
               </div>
 
+              {/* PESTAÑA 1 ADMIN: PEDIDOS CON CAMBIOS DE ESTADO */}
               {adminSubTab === 'orders' && (
                 <div className="mb-8 space-y-4">
                   <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
@@ -937,6 +1056,8 @@ export default function App() {
                               <span className={`px-2 py-0.5 rounded-full font-black text-[10px] ${
                                 order.status === 'Pendiente' ? 'bg-amber-100 text-amber-800 border border-amber-300' :
                                 order.status === 'Pagado' ? 'bg-blue-100 text-blue-800 border border-blue-300' :
+                                order.status === 'Alistado' ? 'bg-purple-100 text-purple-800 border border-purple-300' :
+                                order.status === 'En Camino' ? 'bg-indigo-100 text-indigo-800 border border-indigo-300' :
                                 order.status === 'Completado' || order.status === 'Entregado' ? 'bg-green-100 text-green-800 border border-green-300' : 
                                 'bg-red-100 text-red-800 border border-red-300'
                               }`}>{order.status}</span>
@@ -957,6 +1078,7 @@ export default function App() {
                             {order.failReason && <p className="text-red-600 font-bold bg-red-50 p-1.5 rounded border border-red-200 mt-1">⚠️ No entrega: {order.failReason}</p>}
                           </div>
 
+                          {/* BOTONES DE CAMBIO DE ESTADO (ALISTADO Y EN CAMINO) */}
                           <div className="flex flex-wrap items-center gap-2">
                             <button onClick={() => handlePrintOrder(order)} className="bg-gray-800 hover:bg-black text-white p-2 rounded-lg text-xs flex items-center gap-1 font-bold">
                               <Printer size={14} /> Imprimir
@@ -968,10 +1090,30 @@ export default function App() {
                               </button>
                             )}
 
-                            {order.status === 'Pagado' && (
+                            {(order.status === 'Pagado' || order.status === 'Pendiente') && (
+                              <button 
+                                onClick={() => handleUpdateOrderStatus(order.id, 'Alistado')}
+                                className="bg-purple-600 hover:bg-purple-700 text-white p-2 rounded-lg text-xs font-bold flex items-center gap-1"
+                                title="Marcar como Alistado para entrega"
+                              >
+                                <PackageCheck size={14} /> Alistado
+                              </button>
+                            )}
+
+                            {(order.status === 'Pagado' || order.status === 'Alistado') && (
+                              <button 
+                                onClick={() => handleUpdateOrderStatus(order.id, 'En Camino')}
+                                className="bg-indigo-600 hover:bg-indigo-700 text-white p-2 rounded-lg text-xs font-bold flex items-center gap-1"
+                                title="Marcar como En Camino"
+                              >
+                                <Truck size={14} /> En Camino
+                              </button>
+                            )}
+
+                            {(order.status === 'Pagado' || order.status === 'Alistado' || order.status === 'En Camino') && (
                               <>
                                 <button onClick={() => handleUpdateOrderStatus(order.id, 'Entregado')} className="bg-green-600 hover:bg-green-700 text-white p-2 rounded-lg text-xs font-bold flex items-center gap-1">
-                                  <CheckCircle size={14} /> Completar (Entregado)
+                                  <CheckCircle size={14} /> Entregado
                                 </button>
                                 <button onClick={() => { setFailOrderId(order.id); setFailModalOpen(true); }} className="bg-amber-600 hover:bg-amber-700 text-white p-2 rounded-lg text-xs font-bold flex items-center gap-1">
                                   <AlertTriangle size={14} /> No se pudo entregar
@@ -992,6 +1134,7 @@ export default function App() {
                 </div>
               )}
 
+              {/* PESTAÑA CONTABILIDAD */}
               {adminSubTab === 'accounting' && (
                 <div className="space-y-6">
                   <div className="bg-green-50 border border-green-200 p-5 rounded-2xl flex flex-col md:flex-row justify-between items-center gap-4">
@@ -1079,6 +1222,7 @@ export default function App() {
                 </div>
               )}
 
+              {/* PESTAÑA DEVOLUCIONES */}
               {adminSubTab === 'returns' && (
                 <div className="space-y-4">
                   <h3 className="font-bold text-base text-gray-800 flex items-center gap-2">
