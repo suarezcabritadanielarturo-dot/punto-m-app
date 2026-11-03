@@ -72,7 +72,6 @@ export default function App() {
   const [paymentPreference, setPaymentPreference] = useState('Efectivo');
   const [paymentTiming, setPaymentTiming] = useState('Contra Entrega');
 
-  // Control para asegurar que el usuario envió por WhatsApp antes de ver el seguimiento
   const [whatsappSent, setWhatsappSent] = useState(false);
 
   const [failModalOpen, setFailModalOpen] = useState(false);
@@ -195,7 +194,9 @@ export default function App() {
   };
 
   const handleResetToFactorySettings = async () => {
-    const confirmReset = window.confirm("⚠️ ¿Estás seguro de restablecer los valores de fábrica?");
+    const confirmReset = window.confirm(
+      "⚠️ ¿Estás seguro de restablecer los valores de fábrica?\n\nEsta acción eliminará TODOS los pedidos actuales y restaurará el catálogo inicial."
+    );
     if (!confirmReset) return;
 
     setIsResetting(true);
@@ -220,9 +221,10 @@ export default function App() {
       setDayClosed(false);
       setClosedDayData(null);
       setSelectedClientFilter('all');
-      alert("🔄 ¡Valores restaurados!");
+      alert("🔄 ¡Valores de fábrica restaurados con éxito!");
     } catch (error) {
-      console.error("Error:", error);
+      console.error("Error al restablecer:", error);
+      alert("Hubo un error al restablecer la base de datos.");
     } finally {
       setIsResetting(false);
     }
@@ -305,7 +307,7 @@ export default function App() {
 
     try {
       await addDoc(collection(db, 'orders'), newOrderData);
-      setWhatsappSent(false); // Reiniciamos el estado para obligar al clic de WhatsApp
+      setWhatsappSent(false);
       setView('receipt');
     } catch (err) {
       console.error(err);
@@ -699,7 +701,6 @@ export default function App() {
           </div>
         )}
 
-        {/* SEGUIMIENTO DE PEDIDOS */}
         {view === 'tracking' && (
           <div className="max-w-3xl mx-auto space-y-6">
             <div className="bg-white p-6 rounded-2xl shadow border">
@@ -779,7 +780,6 @@ export default function App() {
           </div>
         )}
 
-        {/* RECIBO CON LISTA DE PRODUCTOS CON PRECIOS, BOTÓN MODIFICAR Y BOTÓN DE WHATSAPP OBLIGATORIO */}
         {view === 'receipt' && (
           <div className="max-w-md mx-auto bg-white p-6 rounded-2xl shadow-2xl border space-y-4">
             <div className="text-center border-b pb-3">
@@ -789,7 +789,6 @@ export default function App() {
               <p className="text-xs text-amber-700 font-medium mt-1">⚠️ Este es un cálculo aproximado. El monto definitivo se confirmará tras la facturación.</p>
             </div>
 
-            {/* LISTA DE PRODUCTOS CON PRECIOS JUSTO ABAJO DEL TEXTO */}
             <div className="bg-gray-50 p-3 rounded-xl border max-h-48 overflow-y-auto space-y-2">
               <p className="text-xs font-bold text-gray-700 border-b pb-1">Detalle del Pedido:</p>
               {cart.map(item => (
@@ -805,7 +804,6 @@ export default function App() {
             </div>
 
             <div className="space-y-2 pt-2">
-              {/* BOTÓN OBLIGATORIO DE WHATSAPP (SIN PRECIOS EN EL MENSAJE) */}
               <a 
                 href={`https://wa.me/584245719928?text=${encodeURIComponent(
                   `🛒 *NUEVO PEDIDO - PUNTO M*\n` +
@@ -826,7 +824,6 @@ export default function App() {
                 <Phone size={16} /> Enviar Pedido por WhatsApp
               </a>
 
-              {/* BOTÓN PARA VER SEGUIMIENTO (SE HABILITA SOLO AL PRESIONAR WHATSAPP) */}
               <button 
                 onClick={() => {
                   if (!whatsappSent) {
@@ -842,7 +839,6 @@ export default function App() {
                 <Truck size={16} /> Presione aquí para seguir su pedido
               </button>
 
-              {/* BOTÓN "MODIFICAR" (DEVUELVE AL CATÁLOGO) */}
               <button 
                 onClick={() => setView('catalog')}
                 className="w-full bg-gray-200 hover:bg-gray-300 text-gray-700 font-bold py-2.5 rounded-xl text-xs flex items-center justify-center gap-1.5 transition"
@@ -853,18 +849,29 @@ export default function App() {
           </div>
         )}
 
-        {/* PANEL ADMIN */}
+        {/* PANEL ADMIN CON BOTÓN DE RESTAURAR VALORES DE FÁBRICA */}
         {view === 'admin' && userRole === 'admin' && (
           <div className="space-y-6 max-w-5xl mx-auto">
             <div className="bg-white p-6 rounded-2xl shadow border">
-              <div className="flex justify-between items-center border-b pb-4 mb-6">
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b pb-4 mb-6 gap-3">
                 <h2 className="font-bold text-xl text-gray-800 flex items-center gap-2">
-                  <Settings className="text-[#0b6b38]" /> Panel Admin
+                  <Settings className="text-[#0b6b38]" /> Panel de Administración PUNTO M
                 </h2>
-                <div className="flex bg-gray-100 p-1 rounded-xl text-xs font-bold gap-1">
-                  <button onClick={() => setAdminSubTab('orders')} className={`px-3 py-2 rounded-lg ${adminSubTab === 'orders' ? 'bg-[#0b6b38] text-white shadow' : 'text-gray-600'}`}>📦 Pedidos</button>
-                  <button onClick={() => setAdminSubTab('accounting')} className={`px-3 py-2 rounded-lg ${adminSubTab === 'accounting' ? 'bg-[#0b6b38] text-white shadow' : 'text-gray-600'}`}>📊 Contabilidad</button>
-                  <button onClick={() => setAdminSubTab('returns')} className={`px-3 py-2 rounded-lg ${adminSubTab === 'returns' ? 'bg-[#0b6b38] text-white shadow' : 'text-gray-600'}`}>🔄 Devoluciones</button>
+                
+                <div className="flex items-center gap-2">
+                  <button 
+                    onClick={handleResetToFactorySettings}
+                    disabled={isResetting}
+                    className="bg-amber-600 hover:bg-amber-700 text-white font-bold px-3 py-2 rounded-xl text-xs flex items-center gap-1 shadow transition"
+                  >
+                    <RotateCcw size={14} /> {isResetting ? 'Restaurando...' : 'Restaurar Fábrica'}
+                  </button>
+
+                  <div className="flex bg-gray-100 p-1 rounded-xl text-xs font-bold gap-1">
+                    <button onClick={() => setAdminSubTab('orders')} className={`px-3 py-2 rounded-lg ${adminSubTab === 'orders' ? 'bg-[#0b6b38] text-white shadow' : 'text-gray-600'}`}>📦 Pedidos</button>
+                    <button onClick={() => setAdminSubTab('accounting')} className={`px-3 py-2 rounded-lg ${adminSubTab === 'accounting' ? 'bg-[#0b6b38] text-white shadow' : 'text-gray-600'}`}>📊 Contabilidad</button>
+                    <button onClick={() => setAdminSubTab('returns')} className={`px-3 py-2 rounded-lg ${adminSubTab === 'returns' ? 'bg-[#0b6b38] text-white shadow' : 'text-gray-600'}`}>🔄 Devoluciones</button>
+                  </div>
                 </div>
               </div>
 
