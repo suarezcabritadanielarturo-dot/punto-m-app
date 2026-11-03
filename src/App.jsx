@@ -127,6 +127,48 @@ export default function App() {
 
   const todayStr = new Date().toISOString().split('T')[0];
 
+  // FUNCIÓN PARA CALCULAR LA HORA MÍNIMA PERMITIDA (AÑADIENDO 40 MINUTOS SI HAY PEDIDOS CERCANOS)
+  const getMinAvailableTime = () => {
+    if (!deliveryDate) return "10:00";
+    
+    // Filtramos los pedidos activos para la fecha seleccionada
+    const ordersOnDate = orders.filter(o => o.deliveryDate === deliveryDate && o.deliveryTime && !o.isCorrupt && o.status !== 'Cancelado' && o.status !== 'No se pudo entregar');
+    if (ordersOnDate.length === 0) return "10:00";
+
+    // Buscamos la hora más tardía agendada para ese día
+    let latestTimeMinutes = 600; // 10:00 AM en minutos (10 * 60)
+    ordersOnDate.forEach(ord => {
+      const [hours, minutes] = ord.deliveryTime.split(':').map(Number);
+      const totalMins = hours * 60 + (minutes || 0);
+      if (totalMins > latestTimeMinutes) {
+        latestTimeMinutes = totalMins;
+      }
+    });
+
+    // Sumamos 40 minutos de margen por alta demanda
+    const adjustedMinutes = latestTimeMinutes + 40;
+    const finalHours = Math.floor(adjustedMinutes / 60);
+    const finalMins = adjustedMinutes % 60;
+
+    // Formateamos a HH:MM (limitado hasta las 19:00 / 7 PM)
+    if (finalHours >= 19) return "19:00";
+    const formattedH = String(finalHours).padStart(2, '0');
+    const formattedM = String(finalMins).padStart(2, '0');
+    return `${formattedH}:${formattedM}`;
+  };
+
+  const minTimeAllowed = getMinAvailableTime();
+
+  const handleTimeChange = (e) => {
+    const chosenTime = e.target.value;
+    if (chosenTime < minTimeAllowed && minTimeAllowed !== "10:00") {
+      alert(`⚠️ ¡Alta demanda en este horario!\n\nPara brindarle la mejor atención, hemos asignado un margen de 40 minutos adicionales respecto a los pedidos anteriores. La hora mínima disponible para su selección es a partir de las ${minTimeAllowed}.`);
+      setDeliveryTime(minTimeAllowed);
+    } else {
+      setDeliveryTime(chosenTime);
+    }
+  };
+
   useEffect(() => {
     const unsubscribeProducts = onSnapshot(collection(db, 'products'), (snapshot) => {
       const dbProducts = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
@@ -795,8 +837,20 @@ export default function App() {
                       <p className="font-bold text-gray-700 flex items-center gap-1"><Calendar size={14} /> Entrega (10 AM - 7 PM): *</p>
                       <div className="grid grid-cols-2 gap-2">
                         <input type="date" min={todayStr} value={deliveryDate} onChange={e => setDeliveryDate(e.target.value)} className="border p-1 rounded text-xs bg-white" />
-                        <input type="time" min="10:00" max="19:00" value={deliveryTime} onChange={e => setDeliveryTime(e.target.value)} className="border p-1 rounded text-xs bg-white" />
+                        <input 
+                          type="time" 
+                          min={minTimeAllowed} 
+                          max="19:00" 
+                          value={deliveryTime} 
+                          onChange={handleTimeChange} 
+                          className="border p-1 rounded text-xs bg-white" 
+                        />
                       </div>
+                      {deliveryDate && (
+                        <p className="text-[10px] text-amber-800 font-medium mt-1">
+                          ⏰ Horario mínimo sugerido por alta demanda: <strong>{minTimeAllowed}</strong>
+                        </p>
+                      )}
                     </div>
 
                     <button onClick={handleGetLocation} disabled={locationLoading} className="w-full bg-blue-50 border border-blue-200 text-blue-700 py-2 rounded-lg text-xs flex items-center justify-center gap-2">
@@ -1329,7 +1383,6 @@ export default function App() {
           </>
         )}
 
-        {/* MODAL GLOBAL DE PREVISUALIZACIÓN DE IMÁGENES */}
         {previewImage && (
           <div className="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-50 p-4" onClick={() => setPreviewImage(null)}>
             <div className="bg-white p-4 rounded-2xl max-w-lg w-full shadow-2xl relative space-y-3" onClick={e => e.stopPropagation()}>
