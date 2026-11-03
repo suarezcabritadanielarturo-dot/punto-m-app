@@ -40,7 +40,8 @@ import {
   RotateCcw as ReturnIcon,
   Banknote,
   ShieldCheck,
-  UserCheck
+  UserCheck,
+  QrCode
 } from 'lucide-react';
 import { auth, googleProvider, db, signInWithPopup, signOut } from './firebase';
 import { 
@@ -73,6 +74,7 @@ export default function App() {
   const [cart, setCart] = useState([]);
   const [orders, setOrders] = useState([]);
   const [usersList, setUsersList] = useState([]);
+  const [paymentMethodsList, setPaymentMethodsList] = useState([]);
   const [selectedClientFilter, setSelectedClientFilter] = useState('all');
   
   const [deliveryDate, setDeliveryDate] = useState('');
@@ -82,6 +84,11 @@ export default function App() {
   const [paymentTiming, setPaymentTiming] = useState('Contra Entrega');
   const [creditTerm, setCreditTerm] = useState('7 dias');
   const [cashPayAmount, setCashPayAmount] = useState('');
+
+  // Estados para nuevo Método de Pago (Admin)
+  const [newPayTitle, setNewPayTitle] = useState('');
+  const [newPayDesc, setNewPayDesc] = useState('');
+  const [newPayImage, setNewPayImage] = useState('');
 
   const [currentOrderId, setCurrentOrderId] = useState(null);
   const [whatsappSent, setWhatsappSent] = useState(false);
@@ -215,6 +222,11 @@ export default function App() {
       setUsersList(dbUsers);
     });
 
+    const unsubscribePayMethods = onSnapshot(collection(db, 'paymentMethods'), (snapshot) => {
+      const dbMethods = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setPaymentMethodsList(dbMethods);
+    });
+
     const unsubscribeAuth = auth.onAuthStateChanged(async (currentUser) => {
       if (currentUser) {
         const adminEmail = 'suarez.cabrita.daniel.arturo@gmail.com';
@@ -262,6 +274,7 @@ export default function App() {
       unsubscribeProducts();
       unsubscribeOrders();
       unsubscribeUsers();
+      unsubscribePayMethods();
       unsubscribeAuth();
     };
   }, []);
@@ -291,15 +304,58 @@ export default function App() {
     }
   };
 
-  // Función para cambiar rol / privilegios del usuario (Admin, Chofer, Cajera, Encargado de Venta, Cliente)
   const handleChangeUserRole = async (targetUid, newRole) => {
     try {
       const userRef = doc(db, 'users', targetUid);
       await updateDoc(userRef, { role: newRole });
-      alert(`✅ ¡Privilegio actualizado a "${newRole.toUpperCase()}" con éxito!`);
+      alert(`✅ ¡Rol actualizado a "${newRole.toUpperCase()}" con éxito!`);
     } catch (err) {
       console.error(err);
-      alert("Error al actualizar los privilegios del usuario.");
+      alert("Error al actualizar los roles del usuario.");
+    }
+  };
+
+  // Función para registrar nuevo método de pago (Admin)
+  const handleSavePaymentMethod = async (e) => {
+    e.preventDefault();
+    if (!newPayTitle.trim() || !newPayDesc.trim()) {
+      alert("⚠️ Por favor ingrese el título y la descripción del método de pago.");
+      return;
+    }
+
+    try {
+      await addDoc(collection(db, 'paymentMethods'), {
+        title: newPayTitle,
+        description: newPayDesc,
+        image: newPayImage || '',
+        createdAt: new Date()
+      });
+      setNewPayTitle('');
+      setNewPayDesc('');
+      setNewPayImage('');
+      alert("✅ ¡Método de pago registrado con éxito!");
+    } catch (err) {
+      console.error(err);
+      alert("Error al guardar método de pago.");
+    }
+  };
+
+  const handleNewPayImageUpload = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => setNewPayImage(reader.result);
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleDeletePaymentMethod = async (methodId) => {
+    if (!window.confirm("¿Estás seguro de eliminar este método de pago?")) return;
+    try {
+      await deleteDoc(doc(db, 'paymentMethods', methodId));
+      alert("🗑️ Método eliminado correctamente.");
+    } catch (err) {
+      console.error(err);
     }
   };
 
@@ -900,6 +956,8 @@ export default function App() {
     }
   });
 
+  const canManageAdminPanel = userRole === 'admin' || userRole === 'encargado' || userRole === 'contabilidad' || userRole === 'supervisor';
+
   return (
     <div className="min-h-screen flex flex-col bg-gray-100 text-gray-800">
       <header className="bg-[#0b6b38] text-white shadow-lg sticky top-0 z-50">
@@ -938,12 +996,14 @@ export default function App() {
                     {userRole === 'chofer' && <span className="bg-cyan-400 text-black text-[9px] px-1 rounded font-black">CHOFER</span>}
                     {userRole === 'cajera' && <span className="bg-pink-400 text-black text-[9px] px-1 rounded font-black">CAJERA</span>}
                     {userRole === 'encargado' && <span className="bg-indigo-400 text-black text-[9px] px-1 rounded font-black">ENCARGADO</span>}
+                    {userRole === 'contabilidad' && <span className="bg-emerald-400 text-black text-[9px] px-1 rounded font-black">CONTABILIDAD</span>}
+                    {userRole === 'supervisor' && <span className="bg-purple-400 text-black text-[9px] px-1 rounded font-black">SUPERVISOR</span>}
                     {isVipClient && <span className="bg-amber-400 text-black text-[9px] px-1 rounded font-black">VIP</span>}
                   </p>
                   <p className="text-gray-300 text-[10px] truncate max-w-[120px]">{user.email}</p>
                 </div>
 
-                {(userRole === 'admin' || userRole === 'encargado') && (
+                {canManageAdminPanel && (
                   <button onClick={() => setView('admin')} title="Panel Admin" className="p-1.5 hover:bg-green-700 rounded-full text-[#fbc02d] transition">
                     <Settings size={18} />
                   </button>
@@ -972,7 +1032,7 @@ export default function App() {
       </header>
 
       <main className="max-w-6xl mx-auto w-full px-4 py-6 flex-1">
-        {isInGracePeriod && userRole !== 'admin' && userRole !== 'encargado' && (
+        {isInGracePeriod && !canManageAdminPanel && userRole !== 'admin' && (
           <div className="bg-amber-50 border-2 border-amber-400 p-4 rounded-2xl mb-6 shadow flex items-center gap-3">
             <AlertCircle className="text-amber-600 w-8 h-8 flex-shrink-0" />
             <div className="text-xs">
@@ -982,7 +1042,7 @@ export default function App() {
           </div>
         )}
 
-        {(clientBlockedOrder || isStrictBlockedForMora) && userRole !== 'admin' && userRole !== 'encargado' ? (
+        {(clientBlockedOrder || isStrictBlockedForMora) && !canManageAdminPanel && userRole !== 'admin' ? (
           <div className="max-w-md mx-auto bg-white p-8 rounded-2xl shadow-2xl border text-center space-y-4 my-12">
             <div className="bg-red-100 text-red-700 p-4 rounded-full w-16 h-16 flex items-center justify-center mx-auto">
               <ShieldAlert size={32} />
@@ -1366,7 +1426,7 @@ export default function App() {
               </div>
             )}
 
-            {view === 'admin' && (userRole === 'admin' || userRole === 'encargado') && (
+            {view === 'admin' && canManageAdminPanel && (
               <div className="space-y-6 max-w-5xl mx-auto">
                 <div className="bg-white p-6 rounded-2xl shadow border">
                   <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b pb-4 mb-6 gap-3">
@@ -1387,6 +1447,7 @@ export default function App() {
 
                       <div className="flex bg-gray-100 p-1 rounded-xl text-xs font-bold gap-1 flex-wrap">
                         <button onClick={() => setAdminSubTab('orders')} className={`px-3 py-2 rounded-lg ${adminSubTab === 'orders' ? 'bg-[#0b6b38] text-white shadow' : 'text-gray-600'}`}>📦 Pedidos</button>
+                        <button onClick={() => setAdminSubTab('paymethods')} className={`px-3 py-2 rounded-lg ${adminSubTab === 'paymethods' ? 'bg-cyan-700 text-white shadow' : 'text-gray-600'}`}>💳 Métodos de Pago</button>
                         <button onClick={() => setAdminSubTab('refunds')} className={`px-3 py-2 rounded-lg relative ${adminSubTab === 'refunds' ? 'bg-purple-700 text-white shadow' : 'text-gray-600'}`}>
                           🔄 Devolución de Dinero
                           {refundDebtOrders.length > 0 && (
@@ -1395,7 +1456,9 @@ export default function App() {
                             </span>
                           )}
                         </button>
-                        <button onClick={() => setAdminSubTab('users')} className={`px-3 py-2 rounded-lg ${adminSubTab === 'users' ? 'bg-[#0b6b38] text-white shadow' : 'text-gray-600'}`}>👥 Privilegios y Usuarios</button>
+                        {userRole === 'admin' && (
+                          <button onClick={() => setAdminSubTab('users')} className={`px-3 py-2 rounded-lg ${adminSubTab === 'users' ? 'bg-[#0b6b38] text-white shadow' : 'text-gray-600'}`}>👥 Privilegios y Personal</button>
+                        )}
                         <button onClick={() => setAdminSubTab('corrupt')} className={`px-3 py-2 rounded-lg ${adminSubTab === 'corrupt' ? 'bg-red-600 text-white shadow' : 'text-gray-600'}`}>🚫 Pagos Corruptos ({corruptOrdersList.length})</button>
                         <button onClick={() => setAdminSubTab('accounting')} className={`px-3 py-2 rounded-lg ${adminSubTab === 'accounting' ? 'bg-[#0b6b38] text-white shadow' : 'text-gray-600'}`}>📊 Contabilidad</button>
                         <button onClick={() => setAdminSubTab('returns')} className={`px-3 py-2 rounded-lg ${adminSubTab === 'returns' ? 'bg-[#0b6b38] text-white shadow' : 'text-gray-600'}`}>🔄 Devoluciones</button>
@@ -1415,9 +1478,10 @@ export default function App() {
                         const cashRetainedByCourier = isCash ? Math.max(0, cashCollected - actualChangeGiven) : 0;
                         const totalToStore = cashRetainedByCourier;
 
-                        // Restricciones de botones según el rol
-                        const canManageFinances = userRole === 'admin' || userRole === 'cajera' || userRole === 'encargado';
-                        const canManageLogistics = userRole === 'admin' || userRole === 'chofer' || userRole === 'encargado';
+                        // Permisos detallados para chofer, cajera, encargado, contabilidad, supervisor, admin
+                        const canManageFinances = userRole === 'admin' || userRole === 'cajera' || userRole === 'encargado' || userRole === 'contabilidad';
+                        const canManageLogistics = userRole === 'admin' || userRole === 'chofer' || userRole === 'encargado' || userRole === 'supervisor';
+                        const canCollectCashOrCard = userRole === 'admin' || userRole === 'cajera' || userRole === 'chofer' || userRole === 'encargado';
 
                         return (
                           <div key={order.id} className="border p-4 rounded-xl bg-white shadow-sm flex flex-col justify-between gap-4">
@@ -1545,47 +1609,36 @@ export default function App() {
 
                             <div className="bg-gray-50 p-3 rounded-xl border flex flex-col sm:flex-row justify-between items-center gap-3">
                               <div className="text-xs">
-                                <p className="font-bold text-gray-700">Gestión Administrativa ({userRole.toUpperCase()}):</p>
-                                <p className="text-gray-500">Factura, montos, vueltos, devoluciones y pagos.</p>
+                                <p className="font-bold text-gray-700">Gestión ({userRole.toUpperCase()}):</p>
+                                <p className="text-gray-500">Acciones y registros disponibles.</p>
                               </div>
 
                               <div className="flex flex-wrap items-center gap-2">
                                 {canManageFinances && (
-                                  <>
-                                    <button 
-                                      onClick={() => {
-                                        setInvoiceOrderId(order.id);
-                                        setInvoiceModalOpen(true);
-                                      }}
-                                      className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-3 py-2 rounded-xl text-xs flex items-center gap-1 shadow"
-                                    >
-                                      <Receipt size={14} /> {order.invoicePhoto ? '🔄 Cambiar Factura' : '📄 Subir Factura'}
-                                    </button>
+                                  <button 
+                                    onClick={() => {
+                                      setInvoiceOrderId(order.id);
+                                      setInvoiceModalOpen(true);
+                                    }}
+                                    className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-3 py-2 rounded-xl text-xs flex items-center gap-1 shadow"
+                                  >
+                                    <Receipt size={14} /> {order.invoicePhoto ? '🔄 Cambiar Factura' : '📄 Subir Factura'}
+                                  </button>
+                                )}
 
-                                    <button 
-                                      onClick={() => {
-                                        setFinalAmountOrderId(order.id);
-                                        setExactFinalAmount(order.total || order.approxTotal || '');
-                                        setFinalAmountModalOpen(true);
-                                      }}
-                                      className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-3 py-2 rounded-xl text-xs flex items-center gap-1 shadow"
-                                    >
-                                      <DollarSign size={14} /> Total a Pagar
-                                    </button>
-
-                                    <button 
-                                      onClick={() => {
-                                        setPayOrderId(order.id);
-                                        setSelectedPayMethodAdmin(order.paymentPreference || 'Efectivo');
-                                        setPayModalOpen(true);
-                                      }}
-                                      className={`px-3 py-2 rounded-xl font-bold text-xs flex items-center gap-1 shadow ${
-                                        order.isPaid ? 'bg-green-100 text-green-800 border border-green-300' : 'bg-blue-600 text-white hover:bg-blue-700'
-                                      }`}
-                                    >
-                                      <CreditCard size={14} /> {order.isPaid ? '✅ Pagado' : '💵 Registrar Pago'}
-                                    </button>
-                                  </>
+                                {canCollectCashOrCard && (
+                                  <button 
+                                    onClick={() => {
+                                      setPayOrderId(order.id);
+                                      setSelectedPayMethodAdmin(order.paymentPreference || 'Efectivo');
+                                      setPayModalOpen(true);
+                                    }}
+                                    className={`px-3 py-2 rounded-xl font-bold text-xs flex items-center gap-1 shadow ${
+                                      order.isPaid ? 'bg-green-100 text-green-800 border border-green-300' : 'bg-blue-600 text-white hover:bg-blue-700'
+                                    }`}
+                                  >
+                                    <CreditCard size={14} /> {order.isPaid ? '✅ Pagado' : '💵 Registrar Pago (Efectivo/Tarjeta)'}
+                                  </button>
                                 )}
 
                                 {canManageLogistics && (
@@ -1641,6 +1694,75 @@ export default function App() {
                           </div>
                         );
                       })}
+                    </div>
+                  )}
+
+                  {/* NUEVA PESTAÑA: MÉTODOS DE PAGO (QR / INFORMACIÓN) */}
+                  {adminSubTab === 'paymethods' && (
+                    <div className="space-y-6">
+                      <div className="bg-cyan-50 border border-cyan-200 p-5 rounded-2xl space-y-4">
+                        <h3 className="font-bold text-base text-cyan-900 flex items-center gap-2">
+                          <QrCode size={20} className="text-cyan-700" /> Registrar Nuevo Método de Pago / Código QR
+                        </h3>
+                        <form onSubmit={handleSavePaymentMethod} className="space-y-3">
+                          <div>
+                            <label className="text-xs font-bold text-gray-700">Título / Nombre del Método (Ej. Yape / BCP / Transferencia): *</label>
+                            <input 
+                              type="text" 
+                              value={newPayTitle} 
+                              onChange={e => setNewPayTitle(e.target.value)} 
+                              placeholder="Ej. Yape - 987654321" 
+                              className="w-full border p-2 rounded-lg text-xs bg-white" 
+                            />
+                          </div>
+                          <div>
+                            <label className="text-xs font-bold text-gray-700">Descripción / Información de la Cuenta: *</label>
+                            <textarea 
+                              rows="2" 
+                              value={newPayDesc} 
+                              onChange={e => setNewPayDesc(e.target.value)} 
+                              placeholder="Ej. Titular: Juan Pérez, RUC/DNI: 12345678, Número: 987654321" 
+                              className="w-full border p-2 rounded-lg text-xs bg-white" 
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-xs font-bold text-gray-700">Imagen / Código QR (Opcional):</label>
+                            <label className="cursor-pointer bg-white border-2 border-dashed border-cyan-400 text-gray-800 font-bold py-2 px-3 rounded-lg flex items-center justify-center gap-2 text-xs">
+                              <Upload size={14} /> <span>{newPayImage ? '✅ Imagen / QR cargado' : 'Subir Imagen o QR'}</span>
+                              <input type="file" accept="image/*" onChange={newPayImageUploadHandler => handleNewPayImageUpload(newPayImageUploadHandler)} className="hidden" />
+                            </label>
+                          </div>
+                          <button type="submit" className="bg-cyan-700 hover:bg-cyan-800 text-white font-bold px-4 py-2.5 rounded-xl text-xs shadow transition">
+                            💾 Registrar Método de Pago
+                          </button>
+                        </form>
+                      </div>
+
+                      <div className="space-y-4">
+                        <h4 className="font-bold text-sm text-gray-800">Métodos de Pago Registrados (Visibles para Choferes y Personal):</h4>
+                        {paymentMethodsList.length === 0 ? (
+                          <div className="text-center py-12 text-gray-400 text-sm">No hay métodos de pago registrados todavía.</div>
+                        ) : (
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            {paymentMethodsList.map(method => (
+                              <div key={method.id} className="border p-4 rounded-xl bg-white shadow-sm flex flex-col justify-between space-y-3">
+                                <div className="space-y-1">
+                                  <h5 className="font-black text-sm text-gray-900">{method.title}</h5>
+                                  <p className="text-xs text-gray-600 whitespace-pre-wrap">{method.description}</p>
+                                  {method.image && (
+                                    <button onClick={() => setPreviewImage(method.image)} className="mt-2 text-xs text-blue-600 underline font-bold flex items-center gap-1">
+                                      <Eye size={12} /> Ver QR / Imagen
+                                    </button>
+                                  )}
+                                </div>
+                                <button onClick={() => handleDeletePaymentMethod(method.id)} className="self-end bg-red-100 text-red-700 hover:bg-red-200 p-1.5 rounded-lg text-xs font-bold flex items-center gap-1">
+                                  <Trash2 size={14} /> Eliminar
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
                     </div>
                   )}
 
@@ -1713,13 +1835,12 @@ export default function App() {
                     </div>
                   )}
 
-                  {/* PESTAÑA DE PRIVILEGIOS Y USUARIOS ACTUALIZADA */}
-                  {adminSubTab === 'users' && (
+                  {adminSubTab === 'users' && userRole === 'admin' && (
                     <div className="space-y-4">
                       <h3 className="font-bold text-base text-gray-800 flex items-center gap-2">
                         <ShieldCheck size={20} className="text-[#0b6b38]" /> Gestión de Privilegios y Roles de Personal
                       </h3>
-                      <p className="text-xs text-gray-600">Asigne o desactive los privilegios para otorgar los permisos correspondientes (Admin, Chofer, Cajera, Encargado de Venta).</p>
+                      <p className="text-xs text-gray-600">Asigne o desactive los privilegios para otorgar los permisos correspondientes (Admin, Chofer, Cajera, Encargado, Contabilidad, Supervisor).</p>
 
                       <div className="space-y-4">
                         {usersList.map(u => {
@@ -1736,7 +1857,9 @@ export default function App() {
                                       currentRole === 'admin' ? 'bg-[#fbc02d] text-black' :
                                       currentRole === 'encargado' ? 'bg-indigo-600 text-white' :
                                       currentRole === 'cajera' ? 'bg-pink-600 text-white' :
-                                      currentRole === 'chofer' ? 'bg-cyan-600 text-white' : 'bg-gray-200 text-gray-700'
+                                      currentRole === 'chofer' ? 'bg-cyan-600 text-white' :
+                                      currentRole === 'contabilidad' ? 'bg-emerald-600 text-white' :
+                                      currentRole === 'supervisor' ? 'bg-purple-600 text-white' : 'bg-gray-200 text-gray-700'
                                     }`}>
                                       {currentRole}
                                     </span>
@@ -1754,6 +1877,8 @@ export default function App() {
                                     <option value="chofer">🚚 Chofer (Repartidor)</option>
                                     <option value="cajera">💵 Cajera (Pagos y Facturación)</option>
                                     <option value="encargado">👔 Encargado de Venta</option>
+                                    <option value="contabilidad">📊 Contabilidad</option>
+                                    <option value="supervisor">👁️ Supervisor</option>
                                     <option value="admin">⭐ Administrador Total</option>
                                   </select>
 
@@ -1791,7 +1916,9 @@ export default function App() {
                                     {currentRole === 'admin' && <li>• Acceso total a todas las funciones, contabilidad y ajustes.</li>}
                                     {currentRole === 'encargado' && <li>• Gestión de pedidos, control de personal, facturas y reportes.</li>}
                                     {currentRole === 'cajera' && <li>• Registro de pagos, subida de facturas, control de efectivo y vueltos.</li>}
-                                    {currentRole === 'chofer' && <li>• Cambio de estado de entregas (En camino, entregado), registro de vueltos.</li>}
+                                    {currentRole === 'chofer' && <li>• Cambio de estado de entregas, registro de pagos efectivo/tarjeta, devoluciones de productos y consulta de métodos de pago.</li>}
+                                    {currentRole === 'contabilidad' && <li>• Control contable, cierres de caja y reportes financieros diarios.</li>}
+                                    {currentRole === 'supervisor' && <li>• Supervisión de entregas, logística y estado de pedidos.</li>}
                                     {currentRole === 'client' && <li>• Visualización de catálogo, generación de pedidos y seguimiento personal.</li>}
                                   </ul>
                                 </div>
@@ -1885,6 +2012,7 @@ export default function App() {
               </div>
             )}
 
+            {/* MODALES */}
             {baseChangeModalOpen && (
               <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
                 <div className="bg-white p-6 rounded-2xl max-w-md w-full shadow-2xl space-y-4">
@@ -2059,6 +2187,26 @@ export default function App() {
                     <button type="button" onClick={() => setSelectedPayMethodAdmin('Pago Digital')} className={`p-2.5 rounded-xl border font-bold text-xs ${selectedPayMethodAdmin === 'Pago Digital' ? 'bg-purple-600 text-white' : 'bg-gray-50'}`}>📱 Digital</button>
                   </div>
 
+                  {/* VISUALIZAR MÉTODOS DE PAGO Y QR REGISTRADOS PARA EL CHOFER / CAJERA */}
+                  {paymentMethodsList.length > 0 && (
+                    <div className="bg-cyan-50 p-3 rounded-xl border border-cyan-200 space-y-2 max-h-40 overflow-y-auto">
+                      <p className="font-bold text-cyan-900 text-xs flex items-center gap-1">
+                        <QrCode size={14} /> Métodos de Pago y QR Disponibles:
+                      </p>
+                      {paymentMethodsList.map(m => (
+                        <div key={m.id} className="bg-white p-2 rounded border text-xs space-y-1">
+                          <p className="font-bold text-gray-800">{m.title}</p>
+                          <p className="text-gray-600">{m.description}</p>
+                          {m.image && (
+                            <button onClick={() => setPreviewImage(m.image)} className="text-cyan-700 underline font-bold flex items-center gap-1">
+                              <Eye size={12} /> Ver QR / Imagen
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
                   {selectedPayMethodAdmin === 'Efectivo' && (
                     <div className="space-y-1 bg-green-50 p-2.5 rounded-xl border border-green-200 text-xs">
                       <p className="font-bold text-green-900 flex items-center gap-1"><Camera size={14} /> [Foto del Efectivo Recibido]: *</p>
@@ -2143,7 +2291,7 @@ export default function App() {
                   </label>
                   <div className="flex justify-end gap-2">
                     <button onClick={() => setReturnModalOpen(false)} className="bg-gray-200 px-4 py-2 rounded-lg text-xs">Cancelar</button>
-                    <button onClick={handleSaveReturnProof} className="bg-green-600 text-white px-4 py-2 rounded-lg text-xs font-bold">Confirmar</button>
+                    <button onClick={handleSaveReturnProof} className="bg-green-600 text-white font-bold px-4 py-2 rounded-lg text-xs font-bold">Confirmar</button>
                   </div>
                 </div>
               </div>
