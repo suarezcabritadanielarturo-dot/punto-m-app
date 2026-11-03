@@ -29,7 +29,8 @@ import {
   RotateCcw,
   Truck,
   PackageCheck,
-  Camera
+  Camera,
+  Receipt
 } from 'lucide-react';
 import { auth, googleProvider, db, signInWithPopup, signOut } from './firebase';
 import { 
@@ -74,11 +75,12 @@ export default function App() {
   const [failOrderId, setFailOrderId] = useState(null);
   const [failReason, setFailReason] = useState('');
 
-  const [payModalOpen, setPayModalOpen] = useState(false);
-  const [payOrderId, setPayOrderId] = useState(null);
-  const [paymentProof, setPaymentProof] = useState('');
-  const [cashPhoto, setCashPhoto] = useState('');
+  // Modal para Facturar / Subir Factura
+  const [invoiceModalOpen, setInvoiceModalOpen] = useState(false);
+  const [invoiceOrderId, setInvoiceOrderId] = useState(null);
+  const [invoicePhoto, setInvoicePhoto] = useState('');
   const [selectedPayMethodAdmin, setSelectedPayMethodAdmin] = useState('');
+  const [cashPhoto, setCashPhoto] = useState('');
 
   const [returnModalOpen, setReturnModalOpen] = useState(false);
   const [returnOrderId, setReturnOrderId] = useState(null);
@@ -101,7 +103,6 @@ export default function App() {
   const [newProduct, setNewProduct] = useState({ name: '', price: '', category: 'Viveres', image: '' });
   const [aiFileText, setAiFileText] = useState('');
   const [isProcessingFile, setIsProcessingFile] = useState(false);
-  const [aiStatusMessage, setAiStatusMessage] = useState('');
 
   const [clientPrompt, setClientPrompt] = useState('');
   const [isAiOrdering, setIsAiOrdering] = useState(false);
@@ -284,8 +285,9 @@ export default function App() {
       paymentPreference: paymentPreference,
       paymentTiming: paymentTiming,
       status: 'Pendiente',
+      isPaid: false, // Estado de pago booleano
       paymentMethod: '',
-      paymentProof: '',
+      invoicePhoto: '', // Foto de la factura subida por el admin
       cashPhoto: '',
       failReason: '',
       returnStatus: 'No aplica',
@@ -311,11 +313,11 @@ export default function App() {
     }
   };
 
-  const handlePaymentProofUpload = (e) => {
+  const handleInvoicePhotoUpload = (e) => {
     const file = e.target.files[0];
     if (file) {
       const reader = new FileReader();
-      reader.onloadend = () => setPaymentProof(reader.result);
+      reader.onloadend = () => setInvoicePhoto(reader.result);
       reader.readAsDataURL(file);
     }
   };
@@ -363,39 +365,6 @@ export default function App() {
     }
   };
 
-  const handleProcessAiFileWithGemini = async () => {
-    if (!aiFileText.trim()) return;
-    setIsProcessingFile(true);
-    try {
-      const promptText = `Analiza la lista y extrae JSON estricta de productos: [{"name": "...", "price": 0.0, "category": "..."}] Texto: """${aiFileText}"""`;
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ contents: [{ parts: [{ text: promptText }] }] })
-      });
-      const data = await response.json();
-      const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-      const jsonMatch = rawText.match(/\[[\s\S]*\]/);
-      const extractedProducts = JSON.parse(jsonMatch ? jsonMatch[0] : '[]');
-
-      for (const item of extractedProducts) {
-        await addDoc(collection(db, 'products'), {
-          name: item.name || 'Nuevo',
-          price: parseFloat(item.price) || 0,
-          category: item.category || 'General',
-          image: 'https://images.unsplash.com/photo-1542838132-92c53300491e?w=300',
-          createdAt: new Date()
-        });
-      }
-      alert(`¡Se agregaron ${extractedProducts.length} productos!`);
-      setAiFileText('');
-    } catch (error) {
-      console.error(error);
-    } finally {
-      setIsProcessingFile(false);
-    }
-  };
-
   const handleUpdateOrderStatus = async (orderId, newStatus, extraData = {}) => {
     try {
       const orderRef = doc(db, 'orders', orderId);
@@ -405,7 +374,8 @@ export default function App() {
     }
   };
 
-  const handleConfirmAdminPayment = async () => {
+  // CONFIRMAR FACTURACIÓN Y PAGO DESDE EL ADMIN
+  const handleConfirmInvoice = async () => {
     if (!selectedPayMethodAdmin) {
       alert("Selecciona la opción de pago.");
       return;
@@ -414,16 +384,21 @@ export default function App() {
       alert("⚠️ Sube la foto del efectivo recibido.");
       return;
     }
+    if (!invoicePhoto) {
+      alert("⚠️ Por favor sube la foto de la factura.");
+      return;
+    }
 
-    await handleUpdateOrderStatus(payOrderId, 'Pagado', {
+    await handleUpdateOrderStatus(invoiceOrderId, 'Facturado', {
+      isPaid: true, // Marca como pagado (cambia a verde)
       paymentMethod: selectedPayMethodAdmin,
-      paymentProof: paymentProof || '',
+      invoicePhoto: invoicePhoto,
       cashPhoto: selectedPayMethodAdmin === 'Efectivo' ? cashPhoto : ''
     });
 
-    setPayModalOpen(false);
-    setPayOrderId(null);
-    setPaymentProof('');
+    setInvoiceModalOpen(false);
+    setInvoiceOrderId(null);
+    setInvoicePhoto('');
     setCashPhoto('');
     setSelectedPayMethodAdmin('');
   };
@@ -466,8 +441,7 @@ export default function App() {
           <h2>PUNTO M - RUC 20123456789</h2>
           <p><strong>Cliente:</strong> ${orderToPrint.clientName} (${orderToPrint.clientPhone || 'Sin teléfono'})</p>
           <p><strong>Método de Pago:</strong> ${orderToPrint.paymentPreference} (${orderToPrint.paymentTiming})</p>
-          <p><strong>Horario Entrega:</strong> ${orderToPrint.deliveryDate} a las ${orderToPrint.deliveryTime}</p>
-          <p><strong>Estado:</strong> ${orderToPrint.status}</p>
+          <p><strong>Estado de Pago:</strong> ${orderToPrint.isPaid ? 'Pagado' : 'Pendiente'}</p>
           <table><tbody>${itemsHtml}</tbody></table>
           <h3>Total: S/ ${Number(orderToPrint.total).toFixed(2)}</h3>
           <script>window.onload = function() { window.print(); window.close(); }</script>
@@ -477,7 +451,7 @@ export default function App() {
     printWindow.document.close();
   };
 
-  const paidOrders = orders.filter(o => o.status === 'Pagado' || o.status === 'Alistado' || o.status === 'En Camino' || o.status === 'Entregado');
+  const paidOrders = orders.filter(o => o.isPaid === true || o.status === 'Facturado' || o.status === 'Entregado');
   const cashTotal = paidOrders.filter(o => o.paymentMethod === 'Efectivo').reduce((sum, o) => sum + Number(o.total), 0);
   const captureOrders = paidOrders.filter(o => o.paymentMethod?.includes('Digital') || o.paymentMethod?.includes('Capture'));
   const captureSystemTotal = captureOrders.reduce((sum, o) => sum + Number(o.total), 0);
@@ -687,6 +661,7 @@ export default function App() {
           </div>
         )}
 
+        {/* SEGUIMIENTO DE PEDIDOS CON ESTADO DE PAGO (AMARILLO/VERDE) Y FACTURA VISIBLE */}
         {view === 'tracking' && (
           <div className="max-w-3xl mx-auto space-y-6">
             <div className="bg-white p-6 rounded-2xl shadow border">
@@ -700,7 +675,7 @@ export default function App() {
                 <div className="space-y-6">
                   {myOrders.map(order => {
                     let stepIndex = 1;
-                    if (order.status === 'Pagado') stepIndex = 2;
+                    if (order.status === 'Facturado') stepIndex = 2;
                     if (order.status === 'Alistado') stepIndex = 3;
                     if (order.status === 'En Camino') stepIndex = 4;
                     if (order.status === 'Entregado') stepIndex = 5;
@@ -713,14 +688,22 @@ export default function App() {
                             <p className="font-bold text-sm text-gray-800">Pedido #{order.id.slice(-6).toUpperCase()}</p>
                             <p className="text-xs text-gray-500">Pago: <strong>{order.paymentPreference} ({order.paymentTiming})</strong></p>
                           </div>
-                          <span className="px-3 py-1 rounded-full font-black text-xs bg-amber-100 text-amber-800 border">{order.status}</span>
+                          
+                          {/* ESTADO DE PAGO DINÁMICO (AMARILLO SI NO HA PAGADO / VERDE SI YA PAGÓ) */}
+                          <span className={`px-3 py-1 rounded-full font-black text-xs border ${
+                            order.isPaid 
+                              ? 'bg-green-100 text-green-800 border-green-300' 
+                              : 'bg-amber-100 text-amber-800 border-amber-300'
+                          }`}>
+                            {order.isPaid ? '🟢 Pagado' : '🟡 Pendiente de Pago'}
+                          </span>
                         </div>
 
                         {!isFailed && (
                           <div className="py-2">
                             <div className="flex justify-between text-[10px] font-bold text-gray-500 mb-2">
                               <span className={stepIndex >= 1 ? 'text-[#0b6b38]' : ''}>1. Registrado</span>
-                              <span className={stepIndex >= 2 ? 'text-blue-600' : ''}>2. Pagado</span>
+                              <span className={stepIndex >= 2 ? 'text-blue-600' : ''}>2. Facturado</span>
                               <span className={stepIndex >= 3 ? 'text-purple-600' : ''}>3. Alistado</span>
                               <span className={stepIndex >= 4 ? 'text-indigo-600' : ''}>4. En Camino</span>
                               <span className={stepIndex >= 5 ? 'text-green-600' : ''}>5. Entregado</span>
@@ -731,11 +714,14 @@ export default function App() {
                           </div>
                         )}
 
-                        {(order.paymentProof || order.cashPhoto) && (
-                          <div className="bg-blue-50 border p-3 rounded-xl text-xs flex justify-between items-center">
-                            <p className="font-bold text-blue-900">💳 Pago Confirmado ({order.paymentMethod})</p>
-                            <button onClick={() => setPreviewImage(order.paymentProof || order.cashPhoto)} className="bg-blue-600 text-white font-bold px-3 py-1.5 rounded-lg text-xs flex items-center gap-1">
-                              <Eye size={14} /> Ver Comprobante
+                        {/* FOTO DE LA FACTURA VISIBLE PARA EL CLIENTE */}
+                        {order.invoicePhoto && (
+                          <div className="bg-green-50 border border-green-200 p-3 rounded-xl text-xs flex justify-between items-center">
+                            <p className="font-bold text-green-900 flex items-center gap-1.5">
+                              <Receipt size={16} className="text-green-700" /> Factura Emitida y Disponible
+                            </p>
+                            <button onClick={() => setPreviewImage(order.invoicePhoto)} className="bg-green-600 text-white font-bold px-3 py-1.5 rounded-lg text-xs flex items-center gap-1 shadow">
+                              <Eye size={14} /> Ver Factura
                             </button>
                           </div>
                         )}
@@ -775,6 +761,7 @@ export default function App() {
           </div>
         )}
 
+        {/* PANEL ADMIN CON BOTÓN DE FACTURAR ABAJO Y ESTADO AMARILLO/VERDE */}
         {view === 'admin' && userRole === 'admin' && (
           <div className="space-y-6 max-w-5xl mx-auto">
             <div className="bg-white p-6 rounded-2xl shadow border">
@@ -792,66 +779,79 @@ export default function App() {
               {adminSubTab === 'orders' && (
                 <div className="space-y-4">
                   {filteredOrders.map(order => (
-                    <div key={order.id} className="border p-4 rounded-xl bg-white shadow-sm flex flex-col md:flex-row justify-between gap-4 items-start md:items-center">
-                      <div className="space-y-1 text-xs flex-1">
-                        <div className="flex items-center gap-2">
-                          <span className="font-bold text-sm text-gray-800">{order.clientName}</span>
-                          <span className="px-2 py-0.5 rounded-full font-black text-[10px] bg-amber-100 text-amber-800 border">{order.status}</span>
+                    <div key={order.id} className="border p-4 rounded-xl bg-white shadow-sm flex flex-col justify-between gap-4">
+                      
+                      <div className="flex flex-col md:flex-row justify-between gap-4 items-start md:items-center border-b pb-3">
+                        <div className="space-y-1 text-xs flex-1">
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-sm text-gray-800">{order.clientName}</span>
+                            <span className="px-2 py-0.5 rounded-full font-black text-[10px] bg-gray-100 border text-gray-700">{order.status}</span>
+                            
+                            {/* INDICADOR DE PAGO AMARILLO / VERDE EN ADMIN */}
+                            <span className={`px-2 py-0.5 rounded-full font-black text-[10px] border ${
+                              order.isPaid ? 'bg-green-100 text-green-800 border-green-300' : 'bg-amber-100 text-amber-800 border-amber-300'
+                            }`}>
+                              {order.isPaid ? '🟢 Pagado' : '🟡 Pendiente'}
+                            </span>
+                          </div>
+                          <p className="text-gray-500">📞 {order.clientPhone} | Pago: {order.paymentPreference} ({order.paymentTiming})</p>
+                          <p className="text-gray-600">Items: {order.items?.map(i => `${i.qty}x ${i.name}`).join(', ')}</p>
+                          <p className="font-bold text-green-800 text-xs">Total: S/ {Number(order.total).toFixed(2)}</p>
+                          
+                          {order.invoicePhoto && (
+                            <button onClick={() => setPreviewImage(order.invoicePhoto)} className="text-xs text-green-700 font-bold underline flex items-center gap-1 mt-1">
+                              <Eye size={14} /> Ver Factura Subida
+                            </button>
+                          )}
                         </div>
-                        <p className="text-gray-500">📞 {order.clientPhone} | Pago: {order.paymentPreference} ({order.paymentTiming})</p>
-                        <p className="text-gray-600">Items: {order.items?.map(i => `${i.qty}x ${i.name}`).join(', ')}</p>
-                        <p className="font-bold text-green-800 text-xs">Total: S/ {Number(order.total).toFixed(2)}</p>
-                        
-                        {order.cashPhoto && (
-                          <button onClick={() => setPreviewImage(order.cashPhoto)} className="text-xs text-green-700 font-bold underline flex items-center gap-1">
-                            <Eye size={14} /> Ver Foto de Efectivo
+
+                        {/* ACCIONES SUPERIORES (Imprimir, Alistado, En Camino, etc.) */}
+                        <div className="flex flex-wrap items-center gap-2">
+                          <button onClick={() => handlePrintOrder(order)} className="bg-gray-800 text-white p-2 rounded-lg text-xs font-bold flex items-center gap-1">
+                            <Printer size={14} /> Imprimir
                           </button>
-                        )}
+
+                          <button onClick={() => handleUpdateOrderStatus(order.id, 'Alistado')} className="bg-purple-600 text-white p-2 rounded-lg text-xs font-bold flex items-center gap-1">
+                            <PackageCheck size={14} /> Alistado
+                          </button>
+
+                          <button onClick={() => handleUpdateOrderStatus(order.id, 'En Camino')} className="bg-indigo-600 text-white p-2 rounded-lg text-xs font-bold flex items-center gap-1">
+                            <Truck size={14} /> En Camino
+                          </button>
+
+                          <button onClick={() => handleUpdateOrderStatus(order.id, 'Entregado')} className="bg-green-600 text-white p-2 rounded-lg text-xs font-bold flex items-center gap-1">
+                            <CheckCircle size={14} /> Entregado
+                          </button>
+
+                          <button onClick={() => { setFailOrderId(order.id); setFailModalOpen(true); }} className="bg-amber-600 text-white p-2 rounded-lg text-xs font-bold flex items-center gap-1">
+                            <AlertTriangle size={14} /> No entregado
+                          </button>
+                        </div>
                       </div>
 
-                      <div className="flex flex-wrap items-center gap-2">
-                        <button onClick={() => handlePrintOrder(order)} className="bg-gray-800 text-white p-2 rounded-lg text-xs font-bold flex items-center gap-1">
-                          <Printer size={14} /> Imprimir
-                        </button>
+                      {/* ZONA INFERIOR: BOTÓN "FACTURAR" (UBICADO ABAJO) */}
+                      <div className="bg-gray-50 p-3 rounded-xl border flex flex-col sm:flex-row justify-between items-center gap-3">
+                        <div className="text-xs">
+                          <p className="font-bold text-gray-700">Estado de Facturación y Pago:</p>
+                          <p className="text-gray-500">{order.isPaid ? 'Este pedido ya cuenta con su factura y pago registrado.' : 'El pedido está pendiente de facturación y cobro.'}</p>
+                        </div>
 
-                        {/* BOTÓN REGISTRAR PAGO (MODAL DE COBRO) */}
-                        {order.status === 'Pendiente' && (
-                          <button 
-                            onClick={() => {
-                              setPayOrderId(order.id);
-                              setSelectedPayMethodAdmin(order.paymentPreference || 'Efectivo');
-                              setPayModalOpen(true);
-                            }}
-                            className="bg-blue-600 text-white p-2 rounded-lg text-xs font-bold flex items-center gap-1"
-                          >
-                            <CreditCard size={14} /> Marcar Pagado / Registrar Cobro
-                          </button>
-                        )}
-
-                        {/* BOTÓN ALISTADO (INDEPENDIENTE DEL PAGO) */}
                         <button 
-                          onClick={() => handleUpdateOrderStatus(order.id, 'Alistado')}
-                          className="bg-purple-600 hover:bg-purple-700 text-white p-2 rounded-lg text-xs font-bold flex items-center gap-1"
+                          onClick={() => {
+                            setInvoiceOrderId(order.id);
+                            setSelectedPayMethodAdmin(order.paymentPreference || 'Efectivo');
+                            setInvoiceModalOpen(true);
+                          }}
+                          className={`px-4 py-2 rounded-xl font-bold text-xs flex items-center gap-1.5 shadow transition ${
+                            order.isPaid 
+                              ? 'bg-blue-100 text-blue-800 hover:bg-blue-200 border border-blue-300' 
+                              : 'bg-blue-600 hover:bg-blue-700 text-white'
+                          }`}
                         >
-                          <PackageCheck size={14} /> Alistado
-                        </button>
-
-                        {/* BOTÓN EN CAMINO (INDEPENDIENTE DEL PAGO) */}
-                        <button 
-                          onClick={() => handleUpdateOrderStatus(order.id, 'En Camino')}
-                          className="bg-indigo-600 hover:bg-indigo-700 text-white p-2 rounded-lg text-xs font-bold flex items-center gap-1"
-                        >
-                          <Truck size={14} /> En Camino
-                        </button>
-
-                        <button onClick={() => handleUpdateOrderStatus(order.id, 'Entregado')} className="bg-green-600 text-white p-2 rounded-lg text-xs font-bold flex items-center gap-1">
-                          <CheckCircle size={14} /> Entregado
-                        </button>
-
-                        <button onClick={() => { setFailOrderId(order.id); setFailModalOpen(true); }} className="bg-amber-600 text-white p-2 rounded-lg text-xs font-bold flex items-center gap-1">
-                          <AlertTriangle size={14} /> No entregado
+                          <Receipt size={16} /> {order.isPaid ? '🔄 Actualizar Factura / Pago' : '📄 Facturar y Marcar Pagado'}
                         </button>
                       </div>
+
                     </div>
                   ))}
                 </div>
@@ -899,42 +899,49 @@ export default function App() {
           </div>
         )}
 
-        {/* MODAL COBRO CON FOTO DE EFECTIVO */}
-        {payModalOpen && (
+        {/* MODAL FACTURAR / SUBIR FACTURA Y COBRO */}
+        {invoiceModalOpen && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
             <div className="bg-white p-6 rounded-2xl max-w-md w-full shadow-2xl space-y-4">
               <h3 className="font-bold text-base text-blue-700 flex items-center gap-2">
-                <CreditCard size={20} /> Registrar Cobro y Marcar Pagado
+                <Receipt size={20} /> Facturar Pedido y Registrar Pago
               </h3>
+              <p className="text-xs text-gray-600">Selecciona el método de cobro, sube la foto de la factura y confirma:</p>
 
               <div className="grid grid-cols-3 gap-2">
-                <button type="button" onClick={() => setSelectedPayMethodAdmin('Efectivo')} className={`p-3 rounded-xl border font-bold text-xs flex flex-col items-center justify-center gap-1 ${selectedPayMethodAdmin === 'Efectivo' ? 'bg-green-600 text-white shadow' : 'bg-gray-50'}`}>
+                <button type="button" onClick={() => setSelectedPayMethodAdmin('Efectivo')} className={`p-2.5 rounded-xl border font-bold text-xs flex flex-col items-center justify-center gap-1 ${selectedPayMethodAdmin === 'Efectivo' ? 'bg-green-600 text-white shadow' : 'bg-gray-50'}`}>
                   💵 Efectivo
                 </button>
-                <button type="button" onClick={() => setSelectedPayMethodAdmin('Tarjeta')} className={`p-3 rounded-xl border font-bold text-xs flex flex-col items-center justify-center gap-1 ${selectedPayMethodAdmin === 'Tarjeta' ? 'bg-blue-600 text-white shadow' : 'bg-gray-50'}`}>
+                <button type="button" onClick={() => setSelectedPayMethodAdmin('Tarjeta')} className={`p-2.5 rounded-xl border font-bold text-xs flex flex-col items-center justify-center gap-1 ${selectedPayMethodAdmin === 'Tarjeta' ? 'bg-blue-600 text-white shadow' : 'bg-gray-50'}`}>
                   💳 Tarjeta
                 </button>
-                <button type="button" onClick={() => setSelectedPayMethodAdmin('Pago Digital')} className={`p-3 rounded-xl border font-bold text-xs flex flex-col items-center justify-center gap-1 ${selectedPayMethodAdmin === 'Pago Digital' ? 'bg-purple-600 text-white shadow' : 'bg-gray-50'}`}>
+                <button type="button" onClick={() => setSelectedPayMethodAdmin('Pago Digital')} className={`p-2.5 rounded-xl border font-bold text-xs flex flex-col items-center justify-center gap-1 ${selectedPayMethodAdmin === 'Pago Digital' ? 'bg-purple-600 text-white shadow' : 'bg-gray-50'}`}>
                   📱 Digital
                 </button>
               </div>
 
               {selectedPayMethodAdmin === 'Efectivo' && (
-                <div className="border-t pt-3 space-y-2 bg-green-50 p-3 rounded-xl border border-green-200">
-                  <p className="text-xs font-bold text-green-900 flex items-center gap-1">
-                    <Camera size={16} /> Tomar Foto del Efectivo Recibido: *
-                  </p>
-                  <label className="cursor-pointer bg-white border-2 border-dashed border-green-400 text-gray-800 text-xs font-bold py-3 px-3 rounded-xl flex flex-col items-center justify-center gap-1">
-                    <Upload size={18} className="text-green-700" />
-                    <span>{cashPhoto ? '✅ Foto de efectivo cargada' : '📷 Tomar foto del dinero'}</span>
+                <div className="space-y-1 bg-green-50 p-2.5 rounded-xl border border-green-200 text-xs">
+                  <p className="font-bold text-green-900 flex items-center gap-1"><Camera size={14} /> Foto del Efectivo Recibido: *</p>
+                  <label className="cursor-pointer bg-white border-2 border-dashed border-green-400 text-gray-800 font-bold py-2 px-2 rounded-lg flex items-center justify-center gap-1">
+                    <Upload size={14} /> <span>{cashPhoto ? '✅ Foto de efectivo lista' : 'Tomar foto del dinero'}</span>
                     <input type="file" accept="image/*" capture="environment" onChange={handleCashPhotoUpload} className="hidden" />
                   </label>
                 </div>
               )}
 
+              {/* CARGAR FOTO DE LA FACTURA */}
+              <div className="space-y-1 bg-blue-50 p-2.5 rounded-xl border border-blue-200 text-xs">
+                <p className="font-bold text-blue-900 flex items-center gap-1"><Receipt size={14} /> Subir Foto de la Factura: *</p>
+                <label className="cursor-pointer bg-white border-2 border-dashed border-blue-400 text-gray-800 font-bold py-2 px-2 rounded-lg flex items-center justify-center gap-1">
+                  <Upload size={14} /> <span>{invoicePhoto ? '✅ Factura cargada (Cambiar)' : 'Seleccionar foto de factura'}</span>
+                  <input type="file" accept="image/*" onChange={handleInvoicePhotoUpload} className="hidden" />
+                </label>
+              </div>
+
               <div className="flex justify-end gap-2 pt-2">
-                <button onClick={() => { setPayModalOpen(false); setPayOrderId(null); }} className="bg-gray-200 text-gray-700 font-bold px-4 py-2 rounded-lg text-xs">Cancelar</button>
-                <button onClick={handleConfirmAdminPayment} className="bg-green-600 text-white font-bold px-4 py-2 rounded-lg text-xs shadow">Guardar Pago</button>
+                <button onClick={() => { setInvoiceModalOpen(false); setInvoiceOrderId(null); setInvoicePhoto(''); setCashPhoto(''); }} className="bg-gray-200 text-gray-700 font-bold px-4 py-2 rounded-lg text-xs">Cancelar</button>
+                <button onClick={handleConfirmInvoice} className="bg-green-600 hover:bg-green-700 text-white font-bold px-4 py-2 rounded-lg text-xs shadow">Guardar y Facturar</button>
               </div>
             </div>
           </div>
@@ -963,7 +970,7 @@ export default function App() {
               </label>
               <div className="flex justify-end gap-2">
                 <button onClick={() => setReturnModalOpen(false)} className="bg-gray-200 px-4 py-2 rounded-lg text-xs">Cancelar</button>
-                <button onClick={handleSaveReturnProof} className="bg-green-600 text-white px-4 py-2 rounded-lg text-xs font-bold">Confirmar</button>
+                <button onClick={handleSaveReturnProof} className="bg-green-600 text-white font-bold px-4 py-2 rounded-lg text-xs font-bold">Confirmar</button>
               </div>
             </div>
           </div>
