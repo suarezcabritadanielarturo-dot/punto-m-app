@@ -1,18 +1,21 @@
+// Import the functions you need from the SDKs you need
 import { initializeApp } from "firebase/app";
-import { getAuth, GoogleAuthProvider, signInWithPopup, signOut } from "firebase/auth";
-import { getFirestore } from "firebase/firestore";
+import { getAnalytics } from "firebase/analytics";
+// TODO: Add SDKs for Firebase products that you want to use
+// https://firebase.google.com/docs/web/setup#available-libraries
 
+// Your web app's Firebase configuration
+// For Firebase JS SDK v7.20.0 and later, measurementId is optional
 const firebaseConfig = {
-  apiKey: "AIzaSyDCbeJRLxvboWnPxyKPCFcnjnoHuINpHUi",
+  apiKey: "AIzaSyDCbeJRlxwboVmPxyKPCFqnjmoHuINpHuI",
   authDomain: "puntom-app.firebaseapp.com",
   projectId: "puntom-app",
-  storageBucket: "puntom-app.appspot.com",
-  messagingSenderId: "690148844286",
-  appId: "1:690148844286:web:cb9d271de6e11e710f5e4"
+  storageBucket: "puntom-app.firebasestorage.app",
+  messagingSenderId: "650145844205",
+  appId: "1:650145844205:web:c59d271de05e11e710f5e4",
+  measurementId: "G-PY0WKVDPKG"
 };
 
+// Initialize Firebase
 const app = initializeApp(firebaseConfig);
-export const auth = getAuth(app);
-export const googleProvider = new GoogleAuthProvider();
-export const db = getFirestore(app);
-export { signInWithPopup, signOut };
+const analytics = getAnalytics(app);
