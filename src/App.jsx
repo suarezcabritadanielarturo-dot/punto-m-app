@@ -10,7 +10,12 @@ import {
   LogOut, 
   Sparkles,
   Phone,
-  Send
+  Send,
+  MapPin,
+  Printer,
+  CheckCircle,
+  XCircle,
+  Clock
 } from 'lucide-react';
 import { auth, googleProvider, db, signInWithPopup, signOut } from './firebase';
 import { 
@@ -19,7 +24,8 @@ import {
   doc, 
   setDoc, 
   getDoc,
-  onSnapshot
+  onSnapshot,
+  updateDoc
 } from 'firebase/firestore';
 
 // API Key de Google Gemini
@@ -38,12 +44,13 @@ export default function App() {
   ]);
 
   const [cart, setCart] = useState([]);
+  const [orders, setOrders] = useState([]);
   
-  const [companyHeader, setCompanyHeader] = useState({
+  const [companyHeader] = useState({
     name: 'PUNTO M',
     rif: 'RUC 20123456789',
     address: 'Av. Principal 123, Lima',
-    phone: '+51 987 654 321',
+    phone: '+58 424 5719928',
     footerMessage: '¡Gracias por su compra en PUNTO M! Conservar comprobante.'
   });
 
@@ -58,7 +65,13 @@ export default function App() {
   const [isAiOrdering, setIsAiOrdering] = useState(false);
   const [aiOrderFeedback, setAiOrderFeedback] = useState('');
 
+  // Ubicación del cliente
+  const [clientLocation, setClientLocation] = useState(null);
+  const [locationLoading, setLocationLoading] = useState(false);
+  const [currentOrder, setCurrentOrder] = useState(null);
+
   useEffect(() => {
+    // Escuchar productos en Firestore
     const unsubscribeProducts = onSnapshot(collection(db, 'products'), (snapshot) => {
       const dbProducts = snapshot.docs.map(doc => ({
         id: doc.id,
@@ -71,6 +84,20 @@ export default function App() {
       console.log("Modo offline o usando catálogo base:", error);
     });
 
+    // Escuchar pedidos en Firestore para el panel Admin
+    const unsubscribeOrders = onSnapshot(collection(db, 'orders'), (snapshot) => {
+      const dbOrders = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      // Ordenar por fecha descendente
+      dbOrders.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+      setOrders(dbOrders);
+    }, (error) => {
+      console.log("Error leyendo pedidos:", error);
+    });
+
+    // Autenticación
     const unsubscribeAuth = auth.onAuthStateChanged(async (currentUser) => {
       if (currentUser) {
         const adminEmail = 'suarez.cabrita.daniel.arturo@gmail.com';
@@ -111,6 +138,7 @@ export default function App() {
 
     return () => {
       unsubscribeProducts();
+      unsubscribeOrders();
       unsubscribeAuth();
     };
   }, []);
@@ -145,7 +173,77 @@ export default function App() {
 
   const cartTotal = cart.reduce((sum, item) => sum + (item.price * item.qty), 0);
 
-  // Función robusta de búsqueda inteligente local sin fallos de JSON
+  // Obtener ubicación GPS actual
+  const handleGetLocation = () => {
+    if (!navigator.geolocation) {
+      alert("Tu navegador no soporta la geolocalización.");
+      return;
+    }
+    setLocationLoading(true);
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const { latitude, longitude } = position.coords;
+        setClientLocation({
+          lat: latitude,
+          lng: longitude,
+          mapUrl: `https://maps.google.com/?q=${latitude},${longitude}`
+        });
+        setLocationLoading(false);
+      },
+      (error) => {
+        console.error("Error obteniendo ubicación:", error);
+        alert("No se pudo obtener la ubicación. Asegúrate de dar permisos de GPS.");
+        setLocationLoading(false);
+      }
+    );
+  };
+
+  // Crear pedido en Firestore y preparar recibo
+  const handleGenerateReceipt = async () => {
+    if (cart.length === 0) return;
+
+    const newOrderData = {
+      clientName: user ? user.name : 'Cliente Anónimo',
+      clientEmail: user ? user.email : 'No registrado',
+      items: cart,
+      total: cartTotal,
+      location: clientLocation || null,
+      status: 'Pendiente',
+      createdAt: new Date()
+    };
+
+    try {
+      const docRef = await addDoc(collection(db, 'orders'), newOrderData);
+      setCurrentOrder({ id: docRef.id, ...newOrderData });
+      setView('receipt');
+    } catch (err) {
+      console.error("Error creando el pedido:", err);
+      // Permitir continuar a la vista de recibo incluso si Firestore falla
+      setCurrentOrder({ id: 'LOCAL-' + Date.now(), ...newOrderData });
+      setView('receipt');
+    }
+  };
+
+  // Generar mensaje formateado para WhatsApp
+  const buildWhatsAppMessage = () => {
+    const orderItems = cart.map(item => `• ${item.qty}x ${item.name} - S/ ${(item.price * item.qty).toFixed(2)}`).join('\n');
+    const locationText = clientLocation 
+      ? `\n📍 *Ubicación del Cliente:*\n${clientLocation.mapUrl}` 
+      : '\n📍 *Ubicación:* No compartida';
+
+    const message = `🛒 *NUEVO PEDIDO - PUNTO M*\n` +
+      `👤 *Cliente:* ${user ? user.name : 'Cliente'}\n` +
+      `-----------------------------------\n` +
+      `📋 *Detalle del Pedido:*\n${orderItems}\n` +
+      `-----------------------------------\n` +
+      `💰 *Total aproximado a pagar:* S/ ${cartTotal.toFixed(2)}\n` +
+      `${locationText}\n\n` +
+      `¡Hola! Confirmo mi pedido para ser procesado.`;
+
+    return encodeURIComponent(message);
+  };
+
+  // Asistente de IA para Pedidos
   const handleClientAiOrder = async () => {
     if (!clientPrompt.trim()) return;
 
@@ -158,10 +256,9 @@ export default function App() {
       let notFoundItems = [];
       let feedbackMessages = [];
 
-      // Evalúa los productos existentes en el catálogo
       products.forEach(prod => {
         const prodNameLower = prod.name.toLowerCase();
-        const mainKeyword = prodNameLower.split(' ')[0]; // Palabra principal (harina, aceite, arroz, azúcar)
+        const mainKeyword = prodNameLower.split(' ')[0];
 
         if (textLower.includes(mainKeyword) || textLower.includes(prodNameLower)) {
           addToCart(prod);
@@ -169,7 +266,6 @@ export default function App() {
         }
       });
 
-      // Detecta palabras clave de productos no encontrados
       const stopWords = ['de', 'kg', '1kg', '1l', 'litro', 'kilos', 'un', 'una', 'quiero', 'dame', 'por', 'favor', 'y', 'el', 'la', 'los', 'las'];
       const userWords = textLower.split(/[\s,]+/);
 
@@ -205,6 +301,7 @@ export default function App() {
     }
   };
 
+  // Procesar archivo con Gemini IA para inventario
   const handleProcessAiFileWithGemini = async () => {
     if (!aiFileText.trim()) {
       alert("Por favor pega el texto de la factura o inventario primero.");
@@ -268,6 +365,75 @@ export default function App() {
       setIsProcessingFile(false);
       setAiStatusMessage('');
     }
+  };
+
+  // Cambiar estado de un pedido en Firestore (Admin)
+  const handleUpdateOrderStatus = async (orderId, newStatus) => {
+    try {
+      const orderRef = doc(db, 'orders', orderId);
+      await updateDoc(orderRef, { status: newStatus });
+    } catch (err) {
+      console.error("Error actualizando estado del pedido:", err);
+    }
+  };
+
+  // Imprimir un pedido específico (Admin)
+  const handlePrintOrder = (orderToPrint) => {
+    const printWindow = window.open('', '_blank');
+    const itemsHtml = orderToPrint.items.map(item => 
+      `<tr>
+        <td style="padding: 4px; border-bottom: 1px solid #ddd;">${item.qty}x</td>
+        <td style="padding: 4px; border-bottom: 1px solid #ddd;">${item.name}</td>
+        <td style="padding: 4px; border-bottom: 1px solid #ddd; text-align: right;">S/ ${(item.price * item.qty).toFixed(2)}</td>
+      </tr>`
+    ).join('');
+
+    const locationHtml = orderToPrint.location 
+      ? `<p><strong>Ubicación GPS:</strong> <a href="${orderToPrint.location.mapUrl}">${orderToPrint.location.mapUrl}</a></p>`
+      : '<p><strong>Ubicación GPS:</strong> No compartida</p>';
+
+    printWindow.document.write(`
+      <html>
+        <head>
+          <title>Pedido PUNTO M - ${orderToPrint.id}</title>
+          <style>
+            body { font-family: Arial, sans-serif; padding: 20px; font-size: 12px; }
+            .header { text-align: center; border-bottom: 2px solid #000; padding-bottom: 10px; margin-bottom: 10px; }
+            .total { font-size: 16px; font-weight: bold; text-align: right; margin-top: 15px; }
+            table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <h2>PUNTO M</h2>
+            <p>RUC 20123456789 - Av. Principal 123, Lima</p>
+            <p>Tel: +58 424 5719928</p>
+          </div>
+          <p><strong>Cliente:</strong> ${orderToPrint.clientName}</p>
+          <p><strong>Estado:</strong> ${orderToPrint.status}</p>
+          ${locationHtml}
+          <table>
+            <thead>
+              <tr style="background: #f0f0f0;">
+                <th style="text-align: left; padding: 4px;">Cant.</th>
+                <th style="text-align: left; padding: 4px;">Producto</th>
+                <th style="text-align: right; padding: 4px;">Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${itemsHtml}
+            </tbody>
+          </table>
+          <div class="total">
+            Total aproximado a pagar: S/ ${Number(orderToPrint.total).toFixed(2)}
+          </div>
+          <script>
+            window.onload = function() { window.print(); window.close(); }
+          </script>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
   };
 
   return (
@@ -408,7 +574,7 @@ export default function App() {
                   El carrito está vacío.
                 </div>
               ) : (
-                <div className="space-y-3 flex-1 overflow-y-auto max-h-[350px] pr-1">
+                <div className="space-y-3 flex-1 overflow-y-auto max-h-[300px] pr-1">
                   {cart.map(item => (
                     <div key={item.id} className="flex justify-between items-center p-2 rounded-lg bg-gray-50 border">
                       <div className="text-xs">
@@ -426,23 +592,46 @@ export default function App() {
                 </div>
               )}
 
+              {/* OPCIÓN PARA OBTENER UBICACIÓN GPS */}
               <div className="mt-4 pt-3 border-t">
-                <div className="flex justify-between font-black text-lg text-gray-800 mb-4">
-                  <span>Total a Pagar:</span>
-                  <span className="text-[#0b6b38]">S/ {cartTotal.toFixed(2)}</span>
+                <div className="mb-3">
+                  <button 
+                    onClick={handleGetLocation}
+                    disabled={locationLoading}
+                    className="w-full bg-blue-50 border border-blue-200 text-blue-700 hover:bg-blue-100 font-medium py-2 rounded-lg text-xs flex items-center justify-center gap-2 transition"
+                  >
+                    <MapPin size={15} /> 
+                    {locationLoading 
+                      ? 'Obteniendo GPS...' 
+                      : clientLocation 
+                        ? '✅ Ubicación obtenida' 
+                        : 'Compartir mi Ubicación Actual'}
+                  </button>
+                  {clientLocation && (
+                    <p className="text-[10px] text-green-700 text-center mt-1">
+                      Ubicación lista para adjuntar al pedido por WhatsApp.
+                    </p>
+                  )}
                 </div>
+
+                <div className="flex justify-between font-black text-sm text-gray-800 mb-4">
+                  <span>Total aproximado a pagar:</span>
+                  <span className="text-[#0b6b38] text-base">S/ {cartTotal.toFixed(2)}</span>
+                </div>
+                
                 <button 
                   disabled={cart.length === 0}
-                  onClick={() => setView('receipt')}
+                  onClick={handleGenerateReceipt}
                   className="w-full bg-[#0b6b38] hover:bg-[#074825] disabled:bg-gray-300 text-white font-bold py-3 rounded-xl transition shadow flex items-center justify-center gap-2"
                 >
-                  <FileText size={18} /> Generar Recibo de Compra
+                  <FileText size={18} /> Generar Recibo y Confirmar
                 </button>
               </div>
             </div>
           </div>
         )}
 
+        {/* VISTA DEL RECIBO */}
         {view === 'receipt' && (
           <div className="max-w-md mx-auto bg-white p-8 rounded-xl shadow-2xl border border-gray-200">
             <div className="text-center border-b pb-4 mb-4">
@@ -473,19 +662,26 @@ export default function App() {
               </tbody>
             </table>
 
+            {clientLocation && (
+              <div className="bg-blue-50 border border-blue-200 p-2 rounded text-xs text-blue-900 mb-4 flex items-center gap-2">
+                <MapPin size={16} className="text-blue-600 flex-shrink-0" />
+                <span className="truncate">Ubicación GPS adjunta para la entrega</span>
+              </div>
+            )}
+
             <div className="border-t-2 border-dashed pt-3 text-right mb-6">
-              <p className="text-sm font-bold">TOTAL:</p>
+              <p className="text-xs text-gray-500 font-bold">TOTAL APROXIMADO A PAGAR:</p>
               <p className="text-2xl font-black text-[#0b6b38]">S/ {cartTotal.toFixed(2)}</p>
             </div>
 
             <div className="space-y-2">
               <a 
-                href={`https://wa.me/${companyHeader.phone.replace(/[^0-9]/g, '')}?text=Hola%20PUNTO%20M,%20confirmo%20mi%20pedido%20por%20S/%20${cartTotal.toFixed(2)}`}
+                href={`https://wa.me/584245719928?text=${buildWhatsAppMessage()}`}
                 target="_blank"
                 rel="noreferrer"
-                className="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-2.5 rounded-lg text-center flex items-center justify-center gap-2 text-sm"
+                className="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-lg text-center flex items-center justify-center gap-2 text-sm shadow transition"
               >
-                <Phone size={16} /> Enviar Pedido por WhatsApp
+                <Phone size={18} /> Enviar Pedido por WhatsApp (+58 424-5719928)
               </a>
               <button 
                 onClick={() => setView('catalog')}
@@ -497,22 +693,92 @@ export default function App() {
           </div>
         )}
 
+        {/* PANEL DE ADMINISTRACIÓN CON PEDIDOS PENDIENTES */}
         {view === 'admin' && userRole === 'admin' && (
-          <div className="space-y-6 max-w-3xl mx-auto">
+          <div className="space-y-6 max-w-4xl mx-auto">
             <div className="bg-white p-6 rounded-2xl shadow border">
-              <h2 className="font-bold text-xl text-gray-800 mb-4 flex items-center gap-2">
+              <h2 className="font-bold text-xl text-gray-800 mb-4 flex items-center gap-2 border-b pb-3">
                 <Settings className="text-[#0b6b38]" /> Panel de Administración PUNTO M
               </h2>
 
+              {/* SECCIÓN DE PEDIDOS PENDIENTES */}
+              <div className="mb-8">
+                <h3 className="font-bold text-base text-gray-800 mb-3 flex items-center gap-2">
+                  <Clock size={18} className="text-amber-600" /> Gestión de Pedidos Pendientes ({orders.filter(o => o.status === 'Pendiente').length})
+                </h3>
+
+                {orders.length === 0 ? (
+                  <p className="text-xs text-gray-400 bg-gray-50 p-4 rounded-lg text-center">No hay pedidos registrados en la base de datos.</p>
+                ) : (
+                  <div className="space-y-4 max-h-[400px] overflow-y-auto pr-1">
+                    {orders.map(order => (
+                      <div key={order.id} className="border p-4 rounded-xl bg-white shadow-sm flex flex-col md:flex-row justify-between gap-4 items-start md:items-center">
+                        <div className="space-y-1 text-xs flex-1">
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-sm text-gray-800">{order.clientName}</span>
+                            <span className={`px-2 py-0.5 rounded-full font-black text-[10px] ${
+                              order.status === 'Pendiente' ? 'bg-amber-100 text-amber-800' :
+                              order.status === 'Completado' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                            }`}>
+                              {order.status}
+                            </span>
+                          </div>
+                          <p className="text-gray-500">Items: {order.items ? order.items.map(i => `${i.qty}x ${i.name}`).join(', ') : 'Sin detalle'}</p>
+                          <p className="font-bold text-green-800">Total aprox: S/ {Number(order.total).toFixed(2)}</p>
+                          {order.location && (
+                            <p className="text-blue-600 flex items-center gap-1 text-[11px]">
+                              <MapPin size={12} />
+                              <a href={order.location.mapUrl} target="_blank" rel="noreferrer" className="underline">
+                                Ver Ubicación GPS en Google Maps
+                              </a>
+                            </p>
+                          )}
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <button 
+                            onClick={() => handlePrintOrder(order)}
+                            className="bg-gray-800 hover:bg-black text-white p-2 rounded-lg text-xs flex items-center gap-1 font-bold"
+                            title="Imprimir Pedido"
+                          >
+                            <Printer size={14} /> Imprimir
+                          </button>
+                          
+                          {order.status === 'Pendiente' && (
+                            <>
+                              <button 
+                                onClick={() => handleUpdateOrderStatus(order.id, 'Completado')}
+                                className="bg-green-600 hover:bg-green-700 text-white p-2 rounded-lg text-xs font-bold flex items-center gap-1"
+                                title="Marcar como Completado"
+                              >
+                                <CheckCircle size={14} /> Completar
+                              </button>
+                              <button 
+                                onClick={() => handleUpdateOrderStatus(order.id, 'Cancelado')}
+                                className="bg-red-500 hover:bg-red-600 text-white p-2 rounded-lg text-xs font-bold flex items-center gap-1"
+                                title="Cancelar Pedido"
+                              >
+                                <XCircle size={14} /> Cancelar
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* IMPORTADOR DE PRODUCTOS GEMINI IA */}
               <div className="bg-green-50 p-5 rounded-xl border border-green-200 mb-6">
                 <h3 className="font-bold text-sm text-green-900 mb-2 flex items-center gap-2">
                   <Sparkles size={18} className="text-[#0b6b38]" /> Importador Inteligente Gemini IA
                 </h3>
                 <p className="text-xs text-green-800 mb-3">
-                  Pega aquí el texto de tu factura o inventario. La IA extraerá los productos y **los guardará directamente en tu base de datos Firestore**.
+                  Pega aquí el texto de tu factura o inventario. La IA extraerá los productos y los guardará directamente en tu base de datos Firestore.
                 </p>
                 <textarea 
-                  rows="5"
+                  rows="4"
                   value={aiFileText}
                   onChange={e => setAiFileText(e.target.value)}
                   placeholder="Ejemplo:
@@ -537,6 +803,7 @@ Azúcar Rubia 1kg - 3.80 S/"
                 )}
               </div>
 
+              {/* REGISTRO MANUAL DE PRODUCTOS */}
               <div className="border-t pt-4">
                 <h3 className="font-bold text-sm text-gray-700 mb-3">Agregar Producto Manual</h3>
                 <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
