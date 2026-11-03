@@ -145,7 +145,7 @@ export default function App() {
 
   const cartTotal = cart.reduce((sum, item) => sum + (item.price * item.qty), 0);
 
-  // Función mejorada para procesar pedidos y avisar de productos no existentes
+  // Función mejorada con extracción limpia de JSON
   const handleClientAiOrder = async () => {
     if (!clientPrompt.trim()) return;
 
@@ -155,22 +155,15 @@ export default function App() {
     try {
       const catalogList = products.map(p => `- ID: ${p.id}, Nombre: ${p.name}, Precio: ${p.price}`).join('\n');
 
-      const promptText = `Eres un asistente de compras de un mercado. El cliente ha escrito lo siguiente: "${clientPrompt}".
+      const promptText = `Eres un asistente de compras de un mercado. El cliente ha escrito: "${clientPrompt}".
       
-      Aquí tienes la lista de productos disponibles en el catálogo con sus IDs y precios:
+      Catálogo disponible:
       ${catalogList}
 
-      Analiza el mensaje del cliente:
-      1. Identifica qué productos de la lista desea comprar y su cantidad.
-      2. Identifica si menciona algún producto que NO esté en la lista del catálogo disponible.
-
-      Responde ÚNICAMENTE con un objeto JSON estricto con esta estructura exacta:
-      {
-        "found": [{"id": "...", "qty": ...}],
-        "notFound": ["nombre del producto 1", "nombre del producto 2"]
-      }
-
-      No agregues texto adicional ni formato markdown extra. Si no hay nada, devuelve {"found": [], "notFound": []}.`;
+      Identifica qué productos desea y su cantidad. Si pide algo que no está en la lista, ponlo en notFound.
+      DEVUELVE ÚNICAMENTE UN JSON VÁLIDO, sin bloques de código markdown, sin explicaciones, exactamente con esta estructura:
+      {"found": [{"id": "...", "qty": 1}], "notFound": ["nombre"]}
+      Si no hay nada, devuelve: {"found": [], "notFound": []}`;
 
       const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`, {
         method: 'POST',
@@ -181,13 +174,15 @@ export default function App() {
       });
 
       const data = await response.json();
-      const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-      const jsonClean = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
-      const result = JSON.parse(jsonClean);
+      const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
+      
+      // Extrae la cadena JSON evitando errores por formato o comentarios extra de la IA
+      const jsonMatch = rawText.match(/\{[\s\S]*\}/);
+      const cleanJsonStr = jsonMatch ? jsonMatch[0] : '{}';
+      const result = JSON.parse(cleanJsonStr);
 
       let feedbackMessages = [];
 
-      // Agregar productos encontrados al carrito
       if (result.found && Array.isArray(result.found) && result.found.length > 0) {
         result.found.forEach(req => {
           const productFound = products.find(p => p.id === req.id);
@@ -197,17 +192,15 @@ export default function App() {
             }
           }
         });
-        feedbackMessages.log = "Productos disponibles agregados al carrito.";
       }
 
-      // Construir mensaje para los no encontrados
       if (result.notFound && Array.isArray(result.notFound) && result.notFound.length > 0) {
         feedbackMessages.push(`⚠️ Los siguientes productos no los tenemos en existencia: ${result.notFound.join(', ')}.`);
       }
 
       if (result.found && result.found.length > 0) {
-        feedbackMessages.unshift("✅ Se agregaron al carrito los productos disponibles.");
-      } else if ((!result.notFound || result.notFound.length === 0) && (!result.found || result.found.length === 0)) {
+        feedbackMessages.unshift("✅ ¡Productos disponibles agregados al carrito!");
+      } else if (feedbackMessages.length === 0) {
         feedbackMessages.push("No se pudieron identificar productos en tu mensaje.");
       }
 
@@ -216,7 +209,7 @@ export default function App() {
 
     } catch (error) {
       console.error("Error en IA de pedidos:", error);
-      setAiOrderFeedback("Hubo un error al procesar tu pedido con la IA.");
+      setAiOrderFeedback("Hubo un error al procesar tu pedido con la IA. Inténtalo de nuevo.");
     } finally {
       setIsAiOrdering(false);
     }
@@ -255,8 +248,9 @@ export default function App() {
 
       const data = await response.json();
       const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-      const jsonClean = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
-      const extractedProducts = JSON.parse(jsonClean);
+      const jsonMatch = rawText.match(/\[[\s\S]*\]/);
+      const cleanJsonStr = jsonMatch ? jsonMatch[0] : '[]';
+      const extractedProducts = JSON.parse(cleanJsonStr);
 
       if (Array.isArray(extractedProducts) && extractedProducts.length > 0) {
         setAiStatusMessage(`📥 Guardando ${extractedProducts.length} productos en la base de datos Firestore...`);
