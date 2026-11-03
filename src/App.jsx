@@ -1699,183 +1699,176 @@ export default function App() {
                             </div>
 
                             {/* BANDEJA DE ACCIONES SEGÚN EL ROL (ESTRICTAMENTE SEPARADA) */}
-                            <div className="bg-gray-50 p-3 rounded-xl border space-y-3">
-                              <div className="flex justify-between items-center text-xs">
-                                <div>
-                                  <p className="font-bold text-gray-700">Acciones Permitidas para tu Rol ({userRole.toUpperCase()}):</p>
+                            {!isEncargado && (
+                              <div className="bg-gray-50 p-3 rounded-xl border space-y-3">
+                                <div className="flex justify-between items-center text-xs">
+                                  <div>
+                                    <p className="font-bold text-gray-700">Acciones Permitidas para tu Rol ({userRole.toUpperCase()}):</p>
+                                  </div>
+                                </div>
+
+                                <div className="flex flex-wrap items-center gap-2">
+                                  {/* ACCIONES EXCLUSIVAS DEL CHOFER */}
+                                  {isChofer && (
+                                    <>
+                                      <button 
+                                        onClick={() => {
+                                          setChangeOrderId(order.id);
+                                          setChangeAmountGiven(order.changeGivenRecord?.amount || '');
+                                          setChangeModalOpen(true);
+                                        }}
+                                        className="bg-teal-600 hover:bg-teal-700 text-white font-bold px-3 py-2 rounded-xl text-xs flex items-center gap-1 shadow"
+                                      >
+                                        <Banknote size={14} /> Vuelto Entregado
+                                      </button>
+
+                                      <button 
+                                        onClick={() => {
+                                          setProductReturnOrderId(order.id);
+                                          setProductReturnModalOpen(true);
+                                        }}
+                                        className="bg-amber-600 hover:bg-amber-700 text-white font-bold px-3 py-2 rounded-xl text-xs flex items-center gap-1 shadow"
+                                      >
+                                        <ReturnIcon size={14} /> Dev. Producto
+                                      </button>
+                                    </>
+                                  )}
+
+                                  {/* ACCIONES EXCLUSIVAS DE LA CAJERA */}
+                                  {isCajera && (
+                                    <>
+                                      <button onClick={() => handlePrintOrder(order)} className="bg-gray-800 text-white p-2 rounded-lg text-xs font-bold flex items-center gap-1">
+                                        <Printer size={14} /> Imprimir
+                                      </button>
+
+                                      <button 
+                                        onClick={() => {
+                                          setInvoiceOrderId(order.id);
+                                          setInvoiceModalOpen(true);
+                                        }}
+                                        className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-3 py-2 rounded-xl text-xs flex items-center gap-1 shadow"
+                                      >
+                                        <Receipt size={14} /> Subir Factura
+                                      </button>
+
+                                      <button 
+                                        onClick={() => {
+                                          setBaseChangeOrderId(order.id);
+                                          setBaseChangeAmount(order.baseChangeRecord?.amount || '');
+                                          setBaseChangeModalOpen(true);
+                                        }}
+                                        className="bg-cyan-600 hover:bg-cyan-700 text-white font-bold px-3 py-2 rounded-xl text-xs flex items-center gap-1 shadow"
+                                      >
+                                        <Banknote size={14} /> Vuelto al Repartidor (Base)
+                                      </button>
+
+                                      <button 
+                                        onClick={() => {
+                                          setReceivedChangeOrderId(order.id);
+                                          setReceivedChangeAmount(order.receivedChangeRecord?.amount || '');
+                                          setReceivedChangeModalOpen(true);
+                                        }}
+                                        className="bg-amber-600 hover:bg-amber-700 text-white font-bold px-3 py-2 rounded-xl text-xs flex items-center gap-1 shadow"
+                                      >
+                                        <Banknote size={14} /> Vuelto Recibido
+                                      </button>
+                                    </>
+                                  )}
+
+                                  {/* ACCIONES DEL ADMINISTRADOR */}
+                                  {isAdmin && (
+                                    <>
+                                      <button 
+                                        onClick={() => {
+                                          setBaseChangeOrderId(order.id);
+                                          setBaseChangeAmount(order.baseChangeRecord?.amount || '');
+                                          setBaseChangeModalOpen(true);
+                                        }}
+                                        className="bg-cyan-600 hover:bg-cyan-700 text-white font-bold px-3 py-2 rounded-xl text-xs flex items-center gap-1 shadow"
+                                      >
+                                        <Banknote size={14} /> Vuelto al Repartidor (Base)
+                                      </button>
+
+                                      <button 
+                                        onClick={() => {
+                                          setReceivedChangeOrderId(order.id);
+                                          setReceivedChangeAmount(order.receivedChangeRecord?.amount || '');
+                                          setReceivedChangeModalOpen(true);
+                                        }}
+                                        className="bg-amber-600 hover:bg-amber-700 text-white font-bold px-3 py-2 rounded-xl text-xs flex items-center gap-1 shadow"
+                                      >
+                                        <Banknote size={14} /> Vuelto Recibido
+                                      </button>
+
+                                      <button 
+                                        onClick={() => {
+                                          setChangeOrderId(order.id);
+                                          setChangeAmountGiven(order.changeGivenRecord?.amount || '');
+                                          setChangeModalOpen(true);
+                                        }}
+                                        className="bg-teal-600 hover:bg-teal-700 text-white font-bold px-3 py-2 rounded-xl text-xs flex items-center gap-1 shadow"
+                                      >
+                                        <Banknote size={14} /> Vuelto Entregado
+                                      </button>
+
+                                      <button 
+                                        onClick={() => {
+                                          setProductReturnOrderId(order.id);
+                                          setProductReturnModalOpen(true);
+                                        }}
+                                        className="bg-amber-600 hover:bg-amber-700 text-white font-bold px-3 py-2 rounded-xl text-xs flex items-center gap-1 shadow"
+                                      >
+                                        <ReturnIcon size={14} /> Dev. Producto
+                                      </button>
+
+                                      <button 
+                                        onClick={() => {
+                                          setPayOrderId(order.id);
+                                          setSelectedPayMethodAdmin(order.paymentPreference || 'Efectivo');
+                                          setPayModalOpen(true);
+                                        }}
+                                        className={`px-3 py-2 rounded-xl font-bold text-xs flex items-center gap-1 shadow ${
+                                          order.isPaid ? 'bg-green-100 text-green-800 border border-green-300' : 'bg-blue-600 text-white hover:bg-blue-700'
+                                        }`}
+                                      >
+                                        <CreditCard size={14} /> {order.isPaid ? '✅ Pagado' : '💵 Registrar Pago'}
+                                      </button>
+
+                                      <button 
+                                        onClick={() => {
+                                          setInvoiceOrderId(order.id);
+                                          setInvoiceModalOpen(true);
+                                        }}
+                                        className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-3 py-2 rounded-xl text-xs flex items-center gap-1 shadow"
+                                      >
+                                        <Receipt size={14} /> Subir Factura
+                                      </button>
+
+                                      <button 
+                                        onClick={() => {
+                                          setFinalAmountOrderId(order.id);
+                                          setExactFinalAmount(order.total || '');
+                                          setFinalAmountModalOpen(true);
+                                        }}
+                                        className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-3 py-2 rounded-xl text-xs flex items-center gap-1 shadow"
+                                      >
+                                        <DollarSign size={14} /> Monto Definitivo
+                                      </button>
+
+                                      <button 
+                                        onClick={() => {
+                                          setCorruptOrderId(order.id);
+                                          setCorruptModalOpen(true);
+                                        }}
+                                        className="bg-red-600 hover:bg-red-700 text-white font-bold px-3 py-2 rounded-xl text-xs flex items-center gap-1 shadow"
+                                      >
+                                        <ShieldAlert size={14} /> Pago Corrupto / Bloquear
+                                      </button>
+                                    </>
+                                  )}
                                 </div>
                               </div>
-
-                              <div className="flex flex-wrap items-center gap-2">
-                                {/* ACCIONES DEL ENCARGADO DE VENTA */}
-                                {isEncargado && (
-                                  <>
-                                    <button onClick={() => handlePrintOrder(order)} className="bg-gray-800 text-white p-2 rounded-lg text-xs font-bold flex items-center gap-1">
-                                      <Printer size={14} /> Imprimir
-                                    </button>
-                                  </>
-                                )}
-
-                                {/* ACCIONES EXCLUSIVAS DEL CHOFER */}
-                                {isChofer && (
-                                  <>
-                                    <button 
-                                      onClick={() => {
-                                        setChangeOrderId(order.id);
-                                        setChangeAmountGiven(order.changeGivenRecord?.amount || '');
-                                        setChangeModalOpen(true);
-                                      }}
-                                      className="bg-teal-600 hover:bg-teal-700 text-white font-bold px-3 py-2 rounded-xl text-xs flex items-center gap-1 shadow"
-                                    >
-                                      <Banknote size={14} /> Vuelto Entregado
-                                    </button>
-
-                                    <button 
-                                      onClick={() => {
-                                        setProductReturnOrderId(order.id);
-                                        setProductReturnModalOpen(true);
-                                      }}
-                                      className="bg-amber-600 hover:bg-amber-700 text-white font-bold px-3 py-2 rounded-xl text-xs flex items-center gap-1 shadow"
-                                    >
-                                      <ReturnIcon size={14} /> Dev. Producto
-                                    </button>
-                                  </>
-                                )}
-
-                                {/* ACCIONES EXCLUSIVAS DE LA CAJERA */}
-                                {isCajera && (
-                                  <>
-                                    <button onClick={() => handlePrintOrder(order)} className="bg-gray-800 text-white p-2 rounded-lg text-xs font-bold flex items-center gap-1">
-                                      <Printer size={14} /> Imprimir
-                                    </button>
-
-                                    <button 
-                                      onClick={() => {
-                                        setInvoiceOrderId(order.id);
-                                        setInvoiceModalOpen(true);
-                                      }}
-                                      className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-3 py-2 rounded-xl text-xs flex items-center gap-1 shadow"
-                                    >
-                                      <Receipt size={14} /> Subir Factura
-                                    </button>
-
-                                    <button 
-                                      onClick={() => {
-                                        setBaseChangeOrderId(order.id);
-                                        setBaseChangeAmount(order.baseChangeRecord?.amount || '');
-                                        setBaseChangeModalOpen(true);
-                                      }}
-                                      className="bg-cyan-600 hover:bg-cyan-700 text-white font-bold px-3 py-2 rounded-xl text-xs flex items-center gap-1 shadow"
-                                    >
-                                      <Banknote size={14} /> Vuelto al Repartidor (Base)
-                                    </button>
-
-                                    <button 
-                                      onClick={() => {
-                                        setReceivedChangeOrderId(order.id);
-                                        setReceivedChangeAmount(order.receivedChangeRecord?.amount || '');
-                                        setReceivedChangeModalOpen(true);
-                                      }}
-                                      className="bg-amber-600 hover:bg-amber-700 text-white font-bold px-3 py-2 rounded-xl text-xs flex items-center gap-1 shadow"
-                                    >
-                                      <Banknote size={14} /> Vuelto Recibido
-                                    </button>
-                                  </>
-                                )}
-
-                                {/* ACCIONES DEL ADMINISTRADOR O ENCARGADO */}
-                                {(isAdmin || isEncargado) && (
-                                  <>
-                                    <button 
-                                      onClick={() => {
-                                        setBaseChangeOrderId(order.id);
-                                        setBaseChangeAmount(order.baseChangeRecord?.amount || '');
-                                        setBaseChangeModalOpen(true);
-                                      }}
-                                      className="bg-cyan-600 hover:bg-cyan-700 text-white font-bold px-3 py-2 rounded-xl text-xs flex items-center gap-1 shadow"
-                                    >
-                                      <Banknote size={14} /> Vuelto al Repartidor (Base)
-                                    </button>
-
-                                    <button 
-                                      onClick={() => {
-                                        setReceivedChangeOrderId(order.id);
-                                        setReceivedChangeAmount(order.receivedChangeRecord?.amount || '');
-                                        setReceivedChangeModalOpen(true);
-                                      }}
-                                      className="bg-amber-600 hover:bg-amber-700 text-white font-bold px-3 py-2 rounded-xl text-xs flex items-center gap-1 shadow"
-                                    >
-                                      <Banknote size={14} /> Vuelto Recibido
-                                    </button>
-
-                                    <button 
-                                      onClick={() => {
-                                        setChangeOrderId(order.id);
-                                        setChangeAmountGiven(order.changeGivenRecord?.amount || '');
-                                        setChangeModalOpen(true);
-                                      }}
-                                      className="bg-teal-600 hover:bg-teal-700 text-white font-bold px-3 py-2 rounded-xl text-xs flex items-center gap-1 shadow"
-                                    >
-                                      <Banknote size={14} /> Vuelto Entregado
-                                    </button>
-
-                                    <button 
-                                      onClick={() => {
-                                        setProductReturnOrderId(order.id);
-                                        setProductReturnModalOpen(true);
-                                      }}
-                                      className="bg-amber-600 hover:bg-amber-700 text-white font-bold px-3 py-2 rounded-xl text-xs flex items-center gap-1 shadow"
-                                    >
-                                      <ReturnIcon size={14} /> Dev. Producto
-                                    </button>
-
-                                    <button 
-                                      onClick={() => {
-                                        setPayOrderId(order.id);
-                                        setSelectedPayMethodAdmin(order.paymentPreference || 'Efectivo');
-                                        setPayModalOpen(true);
-                                      }}
-                                      className={`px-3 py-2 rounded-xl font-bold text-xs flex items-center gap-1 shadow ${
-                                        order.isPaid ? 'bg-green-100 text-green-800 border border-green-300' : 'bg-blue-600 text-white hover:bg-blue-700'
-                                      }`}
-                                    >
-                                      <CreditCard size={14} /> {order.isPaid ? '✅ Pagado' : '💵 Registrar Pago'}
-                                    </button>
-
-                                    <button 
-                                      onClick={() => {
-                                        setInvoiceOrderId(order.id);
-                                        setInvoiceModalOpen(true);
-                                      }}
-                                      className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-3 py-2 rounded-xl text-xs flex items-center gap-1 shadow"
-                                    >
-                                      <Receipt size={14} /> Subir Factura
-                                    </button>
-
-                                    <button 
-                                      onClick={() => {
-                                        setFinalAmountOrderId(order.id);
-                                        setExactFinalAmount(order.total || '');
-                                        setFinalAmountModalOpen(true);
-                                      }}
-                                      className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-3 py-2 rounded-xl text-xs flex items-center gap-1 shadow"
-                                    >
-                                      <DollarSign size={14} /> Monto Definitivo
-                                    </button>
-
-                                    <button 
-                                      onClick={() => {
-                                        setCorruptOrderId(order.id);
-                                        setCorruptModalOpen(true);
-                                      }}
-                                      className="bg-red-600 hover:bg-red-700 text-white font-bold px-3 py-2 rounded-xl text-xs flex items-center gap-1 shadow"
-                                    >
-                                      <ShieldAlert size={14} /> Pago Corrupto / Bloquear
-                                    </button>
-                                  </>
-                                )}
-                              </div>
-                            </div>
+                            )}
 
                           </div>
                         );
