@@ -268,7 +268,7 @@ export default function App() {
         setUserRole(assignedRole);
         setIsVipClient(vipStatus);
 
-        if (assignedRole === 'chofer' || assignedRole === 'cajera' || assignedRole === 'encargado') {
+        if (assignedRole === 'chofer' || assignedRole === 'cajera' || assignedRole === 'encargado' || assignedRole === 'contabilidad') {
           setView('admin');
           setAdminSubTab('orders');
         }
@@ -1027,7 +1027,7 @@ export default function App() {
       <header className="bg-[#0b6b38] text-white shadow-lg sticky top-0 z-50">
         <div className="max-w-6xl mx-auto px-4 py-3 flex justify-between items-center">
           <div className="flex items-center gap-2 cursor-pointer" onClick={() => {
-            if (isChofer || isCajera || isEncargado) {
+            if (isChofer || isCajera || isEncargado || isContabilidad) {
               setView('admin');
               setAdminSubTab('orders');
             } else {
@@ -1520,20 +1520,34 @@ export default function App() {
 
                       <div className="flex bg-gray-100 p-1 rounded-xl text-xs font-bold gap-1 flex-wrap">
                         <button onClick={() => setAdminSubTab('orders')} className={`px-3 py-2 rounded-lg ${adminSubTab === 'orders' ? 'bg-[#0b6b38] text-white shadow' : 'text-gray-600'}`}>📦 Pedidos</button>
-                        {!isChofer && !isCajera && !isEncargado && (
+                        
+                        {(isAdmin || isContabilidad) && (
+                          <button onClick={() => setAdminSubTab('refunds')} className={`px-3 py-2 rounded-lg relative ${adminSubTab === 'refunds' ? 'bg-purple-700 text-white shadow' : 'text-gray-600'}`}>
+                            🔄 Devoluciones
+                            {refundDebtOrders.length > 0 && (
+                              <span className="absolute -top-1 -right-1 bg-red-600 text-white text-[10px] w-4 h-4 rounded-full flex items-center justify-center font-black">
+                                {refundDebtOrders.length}
+                              </span>
+                            )}
+                          </button>
+                        )}
+
+                        {(isAdmin || isContabilidad) && (
+                          <button onClick={() => setAdminSubTab('corrupt')} className={`px-3 py-2 rounded-lg ${adminSubTab === 'corrupt' ? 'bg-red-600 text-white shadow' : 'text-gray-600'}`}>
+                            🚫 Corruptos ({corruptOrdersList.length})
+                          </button>
+                        )}
+
+                        {(isAdmin || isContabilidad) && (
+                          <button onClick={() => setAdminSubTab('accounting')} className={`px-3 py-2 rounded-lg ${adminSubTab === 'accounting' ? 'bg-[#0b6b38] text-white shadow' : 'text-gray-600'}`}>
+                            📊 Contabilidad
+                          </button>
+                        )}
+
+                        {isAdmin && (
                           <>
                             <button onClick={() => setAdminSubTab('paymethods')} className={`px-3 py-2 rounded-lg ${adminSubTab === 'paymethods' ? 'bg-cyan-700 text-white shadow' : 'text-gray-600'}`}>💳 Métodos de Pago y QR</button>
-                            <button onClick={() => setAdminSubTab('refunds')} className={`px-3 py-2 rounded-lg relative ${adminSubTab === 'refunds' ? 'bg-purple-700 text-white shadow' : 'text-gray-600'}`}>
-                              🔄 Devoluciones
-                              {refundDebtOrders.length > 0 && (
-                                <span className="absolute -top-1 -right-1 bg-red-600 text-white text-[10px] w-4 h-4 rounded-full flex items-center justify-center font-black">
-                                  {refundDebtOrders.length}
-                                </span>
-                              )}
-                            </button>
-                            {isAdmin && <button onClick={() => setAdminSubTab('users')} className={`px-3 py-2 rounded-lg ${adminSubTab === 'users' ? 'bg-[#0b6b38] text-white shadow' : 'text-gray-600'}`}>👥 Personal</button>}
-                            <button onClick={() => setAdminSubTab('corrupt')} className={`px-3 py-2 rounded-lg ${adminSubTab === 'corrupt' ? 'bg-red-600 text-white shadow' : 'text-gray-600'}`}>🚫 Corruptos ({corruptOrdersList.length})</button>
-                            <button onClick={() => setAdminSubTab('accounting')} className={`px-3 py-2 rounded-lg ${adminSubTab === 'accounting' ? 'bg-[#0b6b38] text-white shadow' : 'text-gray-600'}`}>📊 Contabilidad</button>
+                            <button onClick={() => setAdminSubTab('users')} className={`px-3 py-2 rounded-lg ${adminSubTab === 'users' ? 'bg-[#0b6b38] text-white shadow' : 'text-gray-600'}`}>👥 Personal</button>
                           </>
                         )}
                       </div>
@@ -1668,37 +1682,36 @@ export default function App() {
                                 )}
                               </div>
 
-                              {!isCajera && (
-                                <div className="flex flex-wrap items-center gap-2">
-                                  <button onClick={() => handlePrintOrder(order)} className="bg-gray-800 text-white p-2 rounded-lg text-xs font-bold flex items-center gap-1">
-                                    <Printer size={14} /> Imprimir
-                                  </button>
+                              {/* BOTÓN IMPRIMIR */}
+                              <div className="flex flex-wrap items-center gap-2">
+                                <button onClick={() => handlePrintOrder(order)} className="bg-gray-800 text-white p-2 rounded-lg text-xs font-bold flex items-center gap-1">
+                                  <Printer size={14} /> Imprimir
+                                </button>
 
-                                  {!isEncargado && (
-                                    <>
-                                      {/* BOTONES DE CAMBIO DE ESTADO (CHOFER / ADMIN) */}
-                                      <button onClick={() => handleUpdateOrderStatus(order.id, 'Alistado')} className="bg-purple-600 text-white p-2 rounded-lg text-xs font-bold flex items-center gap-1">
-                                        <PackageCheck size={14} /> Alistado
-                                      </button>
+                                {/* BOTONES DE CAMBIO DE ESTADO (SOLO CHOFER Y ADMIN) */}
+                                {(isChofer || isAdmin) && (
+                                  <>
+                                    <button onClick={() => handleUpdateOrderStatus(order.id, 'Alistado')} className="bg-purple-600 text-white p-2 rounded-lg text-xs font-bold flex items-center gap-1">
+                                      <PackageCheck size={14} /> Alistado
+                                    </button>
 
-                                      <button onClick={() => handleUpdateOrderStatus(order.id, 'En Camino')} className="bg-indigo-600 text-white p-2 rounded-lg text-xs font-bold flex items-center gap-1">
-                                        <Truck size={14} /> En Camino
-                                      </button>
+                                    <button onClick={() => handleUpdateOrderStatus(order.id, 'En Camino')} className="bg-indigo-600 text-white p-2 rounded-lg text-xs font-bold flex items-center gap-1">
+                                      <Truck size={14} /> En Camino
+                                    </button>
 
-                                      <button onClick={() => handleUpdateOrderStatus(order.id, 'Entregado')} className="bg-green-600 text-white p-2 rounded-lg text-xs font-bold flex items-center gap-1">
-                                        <CheckCircle size={14} /> Entregado
-                                      </button>
+                                    <button onClick={() => handleUpdateOrderStatus(order.id, 'Entregado')} className="bg-green-600 text-white p-2 rounded-lg text-xs font-bold flex items-center gap-1">
+                                      <CheckCircle size={14} /> Entregado
+                                    </button>
 
-                                      <button onClick={() => { setFailOrderId(order.id); setFailModalOpen(true); }} className="bg-amber-600 text-white p-2 rounded-lg text-xs font-bold flex items-center gap-1">
-                                        <AlertTriangle size={14} /> No entregado
-                                      </button>
-                                    </>
-                                  )}
-                                </div>
-                              )}
+                                    <button onClick={() => { setFailOrderId(order.id); setFailModalOpen(true); }} className="bg-amber-600 text-white p-2 rounded-lg text-xs font-bold flex items-center gap-1">
+                                      <AlertTriangle size={14} /> No entregado
+                                    </button>
+                                  </>
+                                )}
+                              </div>
                             </div>
 
-                            {/* BANDEJA DE ACCIONES SEGÚN EL ROL (ESTRICTAMENTE SEPARADA) */}
+                            {/* BANDEJA DE ACCIONES SEGÚN EL ROL */}
                             {!isEncargado && (
                               <div className="bg-gray-50 p-3 rounded-xl border space-y-3">
                                 <div className="flex justify-between items-center text-xs">
@@ -1734,93 +1747,9 @@ export default function App() {
                                     </>
                                   )}
 
-                                  {/* ACCIONES EXCLUSIVAS DE LA CAJERA */}
-                                  {isCajera && (
+                                  {/* ACCIONES DE CONTABILIDAD */}
+                                  {(isContabilidad || isAdmin) && (
                                     <>
-                                      <button onClick={() => handlePrintOrder(order)} className="bg-gray-800 text-white p-2 rounded-lg text-xs font-bold flex items-center gap-1">
-                                        <Printer size={14} /> Imprimir
-                                      </button>
-
-                                      <button 
-                                        onClick={() => {
-                                          setInvoiceOrderId(order.id);
-                                          setInvoiceModalOpen(true);
-                                        }}
-                                        className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-3 py-2 rounded-xl text-xs flex items-center gap-1 shadow"
-                                      >
-                                        <Receipt size={14} /> Subir Factura
-                                      </button>
-
-                                      <button 
-                                        onClick={() => {
-                                          setBaseChangeOrderId(order.id);
-                                          setBaseChangeAmount(order.baseChangeRecord?.amount || '');
-                                          setBaseChangeModalOpen(true);
-                                        }}
-                                        className="bg-cyan-600 hover:bg-cyan-700 text-white font-bold px-3 py-2 rounded-xl text-xs flex items-center gap-1 shadow"
-                                      >
-                                        <Banknote size={14} /> Vuelto al Repartidor (Base)
-                                      </button>
-
-                                      <button 
-                                        onClick={() => {
-                                          setReceivedChangeOrderId(order.id);
-                                          setReceivedChangeAmount(order.receivedChangeRecord?.amount || '');
-                                          setReceivedChangeModalOpen(true);
-                                        }}
-                                        className="bg-amber-600 hover:bg-amber-700 text-white font-bold px-3 py-2 rounded-xl text-xs flex items-center gap-1 shadow"
-                                      >
-                                        <Banknote size={14} /> Vuelto Recibido
-                                      </button>
-                                    </>
-                                  )}
-
-                                  {/* ACCIONES DEL ADMINISTRADOR */}
-                                  {isAdmin && (
-                                    <>
-                                      <button 
-                                        onClick={() => {
-                                          setBaseChangeOrderId(order.id);
-                                          setBaseChangeAmount(order.baseChangeRecord?.amount || '');
-                                          setBaseChangeModalOpen(true);
-                                        }}
-                                        className="bg-cyan-600 hover:bg-cyan-700 text-white font-bold px-3 py-2 rounded-xl text-xs flex items-center gap-1 shadow"
-                                      >
-                                        <Banknote size={14} /> Vuelto al Repartidor (Base)
-                                      </button>
-
-                                      <button 
-                                        onClick={() => {
-                                          setReceivedChangeOrderId(order.id);
-                                          setReceivedChangeAmount(order.receivedChangeRecord?.amount || '');
-                                          setReceivedChangeModalOpen(true);
-                                        }}
-                                        className="bg-amber-600 hover:bg-amber-700 text-white font-bold px-3 py-2 rounded-xl text-xs flex items-center gap-1 shadow"
-                                      >
-                                        <Banknote size={14} /> Vuelto Recibido
-                                      </button>
-
-                                      <button 
-                                        onClick={() => {
-                                          setChangeOrderId(order.id);
-                                          setChangeAmountGiven(order.changeGivenRecord?.amount || '');
-                                          setChangeModalOpen(true);
-                                        }}
-                                        className="bg-teal-600 hover:bg-teal-700 text-white font-bold px-3 py-2 rounded-xl text-xs flex items-center gap-1 shadow"
-                                      >
-                                        <Banknote size={14} /> Vuelto Entregado
-                                      </button>
-
-                                      <button 
-                                        onClick={() => {
-                                          setProductReturnOrderId(order.id);
-                                          setProductReturnModalOpen(true);
-                                        }}
-                                        className="bg-amber-600 hover:bg-amber-700 text-white font-bold px-3 py-2 rounded-xl text-xs flex items-center gap-1 shadow"
-                                      >
-                                        <ReturnIcon size={14} /> Dev. Producto
-                                      </button>
-
                                       <button 
                                         onClick={() => {
                                           setPayOrderId(order.id);
@@ -1832,6 +1761,26 @@ export default function App() {
                                         }`}
                                       >
                                         <CreditCard size={14} /> {order.isPaid ? '✅ Pagado' : '💵 Registrar Pago'}
+                                      </button>
+
+                                      <button 
+                                        onClick={() => {
+                                          setCorruptOrderId(order.id);
+                                          setCorruptModalOpen(true);
+                                        }}
+                                        className="bg-red-600 hover:bg-red-700 text-white font-bold px-3 py-2 rounded-xl text-xs flex items-center gap-1 shadow"
+                                      >
+                                        <ShieldAlert size={14} /> Pago Corrupto / Bloquear
+                                      </button>
+
+                                      <button 
+                                        onClick={() => {
+                                          setProductReturnOrderId(order.id);
+                                          setProductReturnModalOpen(true);
+                                        }}
+                                        className="bg-amber-600 hover:bg-amber-700 text-white font-bold px-3 py-2 rounded-xl text-xs flex items-center gap-1 shadow"
+                                      >
+                                        <ReturnIcon size={14} /> Dev. Producto
                                       </button>
 
                                       <button 
@@ -1857,14 +1806,40 @@ export default function App() {
 
                                       <button 
                                         onClick={() => {
-                                          setCorruptOrderId(order.id);
-                                          setCorruptModalOpen(true);
+                                          setBaseChangeOrderId(order.id);
+                                          setBaseChangeAmount(order.baseChangeRecord?.amount || '');
+                                          setBaseChangeModalOpen(true);
                                         }}
-                                        className="bg-red-600 hover:bg-red-700 text-white font-bold px-3 py-2 rounded-xl text-xs flex items-center gap-1 shadow"
+                                        className="bg-cyan-600 hover:bg-cyan-700 text-white font-bold px-3 py-2 rounded-xl text-xs flex items-center gap-1 shadow"
                                       >
-                                        <ShieldAlert size={14} /> Pago Corrupto / Bloquear
+                                        <Banknote size={14} /> Vuelto al Repartidor (Base)
+                                      </button>
+
+                                      <button 
+                                        onClick={() => {
+                                          setReceivedChangeOrderId(order.id);
+                                          setReceivedChangeAmount(order.receivedChangeRecord?.amount || '');
+                                          setReceivedChangeModalOpen(true);
+                                        }}
+                                        className="bg-amber-600 hover:bg-amber-700 text-white font-bold px-3 py-2 rounded-xl text-xs flex items-center gap-1 shadow"
+                                      >
+                                        <Banknote size={14} /> Vuelto Recibido
                                       </button>
                                     </>
+                                  )}
+
+                                  {/* ACCIONES ADICIONALES SOLO PARA ADMIN */}
+                                  {isAdmin && (
+                                    <button 
+                                      onClick={() => {
+                                        setChangeOrderId(order.id);
+                                        setChangeAmountGiven(order.changeGivenRecord?.amount || '');
+                                        setChangeModalOpen(true);
+                                      }}
+                                      className="bg-teal-600 hover:bg-teal-700 text-white font-bold px-3 py-2 rounded-xl text-xs flex items-center gap-1 shadow"
+                                    >
+                                      <Banknote size={14} /> Vuelto Entregado
+                                    </button>
                                   )}
                                 </div>
                               </div>
@@ -1876,7 +1851,7 @@ export default function App() {
                     </div>
                   )}
 
-                  {adminSubTab === 'paymethods' && !isChofer && !isCajera && !isEncargado && (
+                  {adminSubTab === 'paymethods' && isAdmin && (
                     <div className="space-y-6">
                       <div className="bg-cyan-50 border border-cyan-200 p-5 rounded-2xl space-y-4">
                         <h3 className="font-bold text-base text-cyan-900 flex items-center gap-2">
@@ -1951,7 +1926,7 @@ export default function App() {
                     </div>
                   )}
 
-                  {adminSubTab === 'refunds' && !isChofer && !isCajera && !isEncargado && (
+                  {adminSubTab === 'refunds' && (isAdmin || isContabilidad) && (
                     <div className="space-y-4">
                       <h3 className="font-bold text-base text-purple-800 flex items-center gap-2">
                         <RefreshCw size={20} /> Gestión de Devolución de Dinero a Clientes
@@ -2102,7 +2077,7 @@ export default function App() {
                                     {currentRole === 'encargado' && <li>• Visualización de lista de productos pedidos e impresión de comprobantes.</li>}
                                     {currentRole === 'cajera' && <li>• Subir factura, imprimir, registro de vuelto base y vuelto recibido del chofer.</li>}
                                     {currentRole === 'chofer' && <li>• Cambio de estado de entregas, registro de vuelto entregado y devoluciones.</li>}
-                                    {currentRole === 'contabilidad' && <li>• Control contable, cierres de caja y reportes financieros diarios.</li>}
+                                    {currentRole === 'contabilidad' && <li>• Registrar pago, pago corrupto, devoluciones, facturas, monto definitivo, vuelto base y vuelto recibido del repartidor.</li>}
                                     {currentRole === 'supervisor' && <li>• Supervisión de entregas, logística y estado de pedidos.</li>}
                                     {currentRole === 'client' && <li>• Visualización de catálogo, generación de pedidos y seguimiento personal.</li>}
                                   </ul>
@@ -2115,7 +2090,7 @@ export default function App() {
                     </div>
                   )}
 
-                  {adminSubTab === 'corrupt' && !isChofer && !isCajera && !isEncargado && (
+                  {adminSubTab === 'corrupt' && (isAdmin || isContabilidad) && (
                     <div className="space-y-4">
                       <h3 className="font-bold text-base text-red-700 flex items-center gap-2">
                         <ShieldAlert size={20} /> Clientes con Pagos Corruptos y Bloqueados
@@ -2155,7 +2130,7 @@ export default function App() {
                     </div>
                   )}
 
-                  {adminSubTab === 'accounting' && !isChofer && !isCajera && !isEncargado && (
+                  {adminSubTab === 'accounting' && (isAdmin || isContabilidad) && (
                     <div className="space-y-6">
                       <div className="bg-green-50 border p-5 rounded-2xl flex justify-between items-center">
                         <div>
@@ -2438,6 +2413,46 @@ export default function App() {
                   <div className="flex justify-end gap-2 pt-2">
                     <button onClick={() => { setProductReturnModalOpen(false); setProductReturnOrderId(null); setReturnedItemsSummary(''); setManualProductValue(''); setReturnedProductsPhoto(''); }} className="bg-gray-200 text-gray-700 font-bold px-4 py-2 rounded-lg text-xs">Cancelar</button>
                     <button onClick={handleSaveProductReturn} className="bg-amber-600 hover:bg-amber-700 text-white font-bold px-4 py-2 rounded-lg text-xs shadow">Aplicar Descuento</button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {refundModalOpen && (
+              <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+                <div className="bg-white p-6 rounded-2xl max-w-md w-full shadow-2xl space-y-4">
+                  <h3 className="font-bold text-base text-purple-700 flex items-center gap-2">
+                    <Banknote size={20} /> Realizar y Subir Reembolso al Cliente
+                  </h3>
+                  <p className="text-xs text-gray-600">Ingrese el monto devuelto y adjunte la foto del comprobante de transferencia:</p>
+
+                  <input 
+                    type="number"
+                    step="0.01"
+                    value={refundAmount}
+                    onChange={e => setRefundAmount(e.target.value)}
+                    placeholder="Monto a devolver (Ej. 4.50)"
+                    className="w-full border p-2.5 rounded-lg text-sm font-bold text-purple-900"
+                  />
+
+                  <div className="space-y-1 bg-purple-50 p-3 rounded-xl border border-purple-200 text-xs">
+                    <p className="font-bold text-purple-900 flex items-center gap-1"><Camera size={14} /> Foto del Comprobante de Transferencia: *</p>
+                    <div className="grid grid-cols-2 gap-2 mt-1">
+                      <label className="cursor-pointer bg-white border-2 border-dashed border-purple-400 text-purple-800 font-bold py-2 px-2 rounded-lg flex items-center justify-center gap-1">
+                        <Camera size={14} /> <span>Cámara</span>
+                        <input type="file" accept="image/*" capture="environment" onChange={handleRefundProofPhotoUpload} className="hidden" />
+                      </label>
+                      <label className="cursor-pointer bg-white border-2 border-dashed border-gray-300 text-gray-700 font-bold py-2 px-2 rounded-lg flex items-center justify-center gap-1">
+                        <Upload size={14} /> <span>Teléfono</span>
+                        <input type="file" accept="image/*" onChange={handleRefundProofPhotoUpload} className="hidden" />
+                      </label>
+                    </div>
+                    {refundProofPhoto && <p className="text-[10px] text-green-700 font-bold mt-1">✅ Comprobante cargado correctamente</p>}
+                  </div>
+
+                  <div className="flex justify-end gap-2 pt-2">
+                    <button onClick={() => { setRefundModalOpen(false); setRefundOrderId(null); setRefundAmount(''); setRefundProofPhoto(''); }} className="bg-gray-200 text-gray-700 font-bold px-4 py-2 rounded-lg text-xs">Cancelar</button>
+                    <button onClick={handleSaveRefundRecord} className="bg-purple-600 hover:bg-purple-700 text-white font-bold px-4 py-2 rounded-lg text-xs shadow">Guardar Reembolso</button>
                   </div>
                 </div>
               </div>
