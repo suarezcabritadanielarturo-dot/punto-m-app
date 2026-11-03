@@ -1393,8 +1393,9 @@ export default function App() {
                         const isCash = order.paymentPreference === 'Efectivo';
                         const cashCollected = isCash ? Number(order.cashPayAmount || finalTotal) : 0;
                         
-                        // FÓRMULA CORREGIDA: El total que el repartidor entrega a la tienda es el total exacto del pedido
-                        const totalToStore = isCash ? finalTotal : 0;
+                        // FÓRMULA CORREGIDA: Efectivo real retenido por el repartidor tras cobrar y dar vuelto
+                        const cashRetainedByCourier = isCash ? Math.max(0, cashCollected - actualChangeGiven) : 0;
+                        const totalToStore = cashRetainedByCourier;
 
                         return (
                           <div key={order.id} className="border p-4 rounded-xl bg-white shadow-sm flex flex-col justify-between gap-4">
@@ -1447,6 +1448,11 @@ export default function App() {
                                     <p className="text-green-900 font-black pt-1 border-t border-blue-200">
                                       💵 Total que debe entregar el repartidor a la tienda: <strong>S/ {totalToStore.toFixed(2)}</strong>
                                     </p>
+                                    {cashRetainedByCourier > finalTotal && (
+                                      <p className="text-red-600 font-bold pt-1">
+                                        ⚠️ Alerta: El repartidor retuvo S/ {cashRetainedByCourier.toFixed(2)} pero el pedido final es S/ {finalTotal.toFixed(2)}. Hay un excedente de S/ {(cashRetainedByCourier - finalTotal).toFixed(2)} por devoluciones.
+                                      </p>
+                                    )}
                                   </div>
                                 ) : (
                                   <div className="bg-purple-50 p-2.5 rounded-lg border border-purple-200 space-y-1 mt-1">
