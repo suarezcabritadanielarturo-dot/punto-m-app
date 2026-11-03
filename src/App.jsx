@@ -85,7 +85,6 @@ export default function App() {
   const [creditTerm, setCreditTerm] = useState('7 dias');
   const [cashPayAmount, setCashPayAmount] = useState('');
 
-  // Estados para nuevo Método de Pago (Admin)
   const [newPayTitle, setNewPayTitle] = useState('');
   const [newPayDesc, setNewPayDesc] = useState('');
   const [newPayImage, setNewPayImage] = useState('');
@@ -960,14 +959,22 @@ export default function App() {
     }
   });
 
-  const isAdminOrManager = userRole === 'admin' || userRole === 'encargado' || userRole === 'contabilidad' || userRole === 'supervisor' || userRole === 'chofer' || userRole === 'cajera';
+  // Delimitación estricta de roles
+  const isAdmin = userRole === 'admin';
+  const isEncargado = userRole === 'encargado';
+  const isChofer = userRole === 'chofer';
+  const isCajera = userRole === 'cajera';
+  const isContabilidad = userRole === 'contabilidad';
+  const isSupervisor = userRole === 'supervisor';
+
+  const isAdminOrManager = isAdmin || isEncargado || isContabilidad || isSupervisor || isChofer || isCajera;
 
   return (
     <div className="min-h-screen flex flex-col bg-gray-100 text-gray-800">
       <header className="bg-[#0b6b38] text-white shadow-lg sticky top-0 z-50">
         <div className="max-w-6xl mx-auto px-4 py-3 flex justify-between items-center">
           <div className="flex items-center gap-2 cursor-pointer" onClick={() => {
-            if (userRole === 'chofer') {
+            if (isChofer) {
               setView('admin');
               setAdminSubTab('orders');
             } else {
@@ -982,7 +989,7 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-3">
-            {user && (userRole === 'client' || userRole === 'admin') && (
+            {user && (userRole === 'client' || isAdmin) && (
               <button 
                 onClick={() => setView('tracking')}
                 className={`px-3 py-1.5 rounded-lg font-bold text-xs flex items-center gap-1.5 transition ${view === 'tracking' ? 'bg-[#fbc02d] text-black shadow' : 'bg-[#074825] hover:bg-green-700 text-white'}`}
@@ -1003,12 +1010,12 @@ export default function App() {
                 <div className="hidden sm:block text-left text-xs">
                   <p className="font-bold text-white flex items-center gap-1">
                     {user.name} 
-                    {userRole === 'admin' && <span className="bg-[#fbc02d] text-black text-[9px] px-1 rounded font-black">ADMIN</span>}
-                    {userRole === 'chofer' && <span className="bg-cyan-400 text-black text-[9px] px-1 rounded font-black">CHOFER</span>}
-                    {userRole === 'cajera' && <span className="bg-pink-400 text-black text-[9px] px-1 rounded font-black">CAJERA</span>}
-                    {userRole === 'encargado' && <span className="bg-indigo-400 text-black text-[9px] px-1 rounded font-black">ENCARGADO</span>}
-                    {userRole === 'contabilidad' && <span className="bg-emerald-400 text-black text-[9px] px-1 rounded font-black">CONTABILIDAD</span>}
-                    {userRole === 'supervisor' && <span className="bg-purple-400 text-black text-[9px] px-1 rounded font-black">SUPERVISOR</span>}
+                    {isAdmin && <span className="bg-[#fbc02d] text-black text-[9px] px-1 rounded font-black">ADMIN</span>}
+                    {isChofer && <span className="bg-cyan-400 text-black text-[9px] px-1 rounded font-black">CHOFER</span>}
+                    {isCajera && <span className="bg-pink-400 text-black text-[9px] px-1 rounded font-black">CAJERA</span>}
+                    {isEncargado && <span className="bg-indigo-400 text-black text-[9px] px-1 rounded font-black">ENCARGADO</span>}
+                    {isContabilidad && <span className="bg-emerald-400 text-black text-[9px] px-1 rounded font-black">CONTABILIDAD</span>}
+                    {isSupervisor && <span className="bg-purple-400 text-black text-[9px] px-1 rounded font-black">SUPERVISOR</span>}
                     {isVipClient && <span className="bg-amber-400 text-black text-[9px] px-1 rounded font-black">VIP</span>}
                   </p>
                   <p className="text-gray-300 text-[10px] truncate max-w-[120px]">{user.email}</p>
@@ -1030,7 +1037,7 @@ export default function App() {
               </button>
             )}
 
-            {(userRole === 'client' || userRole === 'admin') && (
+            {(userRole === 'client' || isAdmin) && (
               <button onClick={() => setView('catalog')} className="relative bg-white text-[#0b6b38] p-2 rounded-full font-bold shadow hover:bg-gray-100">
                 <ShoppingBag size={22} />
                 {cart.length > 0 && (
@@ -1045,7 +1052,7 @@ export default function App() {
       </header>
 
       <main className="max-w-6xl mx-auto w-full px-4 py-6 flex-1">
-        {isInGracePeriod && userRole !== 'admin' && (
+        {isInGracePeriod && !isAdmin && (
           <div className="bg-amber-50 border-2 border-amber-400 p-4 rounded-2xl mb-6 shadow flex items-center gap-3">
             <AlertCircle className="text-amber-600 w-8 h-8 flex-shrink-0" />
             <div className="text-xs">
@@ -1055,7 +1062,7 @@ export default function App() {
           </div>
         )}
 
-        {(clientBlockedOrder || isStrictBlockedForMora) && userRole !== 'admin' ? (
+        {(clientBlockedOrder || isStrictBlockedForMora) && !isAdmin ? (
           <div className="max-w-md mx-auto bg-white p-8 rounded-2xl shadow-2xl border text-center space-y-4 my-12">
             <div className="bg-red-100 text-red-700 p-4 rounded-full w-16 h-16 flex items-center justify-center mx-auto">
               <ShieldAlert size={32} />
@@ -1098,7 +1105,7 @@ export default function App() {
           </div>
         ) : (
           <>
-            {view === 'catalog' && (userRole === 'client' || userRole === 'admin') && (
+            {view === 'catalog' && (userRole === 'client' || isAdmin) && (
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 <div className="lg:col-span-2 space-y-6">
                   
@@ -1198,7 +1205,7 @@ export default function App() {
                       )}
 
                       {paymentPreference === 'Crédito' && (
-                        (isVipClient || userRole === 'admin') ? (
+                        (isVipClient || isAdmin) ? (
                           <div className="space-y-1 bg-white p-2 rounded border">
                             <label className="font-bold text-gray-700 text-[10px]">Plazo de Crédito:</label>
                             <select value={creditTerm} onChange={e => setCreditTerm(e.target.value)} className="w-full border p-1 rounded text-xs">
@@ -1259,9 +1266,9 @@ export default function App() {
                     </div>
                     
                     <button 
-                      disabled={cart.length === 0 || (paymentPreference === 'Crédito' && !isVipClient && userRole !== 'admin')} 
+                      disabled={cart.length === 0 || (paymentPreference === 'Crédito' && !isVipClient && !isAdmin)} 
                       onClick={handleGenerateReceipt} 
-                      className={`w-full font-bold py-3 rounded-xl shadow ${paymentPreference === 'Crédito' && !isVipClient && userRole !== 'admin' ? 'bg-gray-300 text-gray-500 cursor-not-allowed' : 'bg-[#0b6b38] text-white'}`}
+                      className={`w-full font-bold py-3 rounded-xl shadow ${paymentPreference === 'Crédito' && !isVipClient && !isAdmin ? 'bg-gray-300 text-gray-500 cursor-not-allowed' : 'bg-[#0b6b38] text-white'}`}
                     >
                       Generar cálculo aproximado
                     </button>
@@ -1270,7 +1277,7 @@ export default function App() {
               </div>
             )}
 
-            {view === 'tracking' && (userRole === 'client' || userRole === 'admin') && (
+            {view === 'tracking' && (userRole === 'client' || isAdmin) && (
               <div className="max-w-3xl mx-auto space-y-6">
                 <div className="bg-white p-6 rounded-2xl shadow border">
                   <h2 className="font-bold text-xl text-gray-800 mb-2 flex items-center gap-2 border-b pb-3">
@@ -1368,7 +1375,7 @@ export default function App() {
               </div>
             )}
 
-            {view === 'receipt' && (userRole === 'client' || userRole === 'admin') && (
+            {view === 'receipt' && (userRole === 'client' || isAdmin) && (
               <div className="max-w-md mx-auto bg-white p-6 rounded-2xl shadow-2xl border space-y-4">
                 <div className="text-center border-b pb-3">
                   <div className="inline-block bg-[#0b6b38] px-4 py-1 rounded text-white font-black text-xl mb-1">PUNTO M</div>
@@ -1448,28 +1455,34 @@ export default function App() {
                     </h2>
                     
                     <div className="flex items-center gap-2">
-                      <button 
-                        onClick={handleResetToFactorySettings}
-                        disabled={isResetting}
-                        className="bg-amber-600 hover:bg-amber-700 text-white font-bold px-3 py-2 rounded-xl text-xs flex items-center gap-1 shadow transition"
-                      >
-                        <RotateCcw size={14} /> {isResetting ? 'Restaurando...' : 'Restaurar Fábrica'}
-                      </button>
+                      {isAdmin && (
+                        <button 
+                          onClick={handleResetToFactorySettings}
+                          disabled={isResetting}
+                          className="bg-amber-600 hover:bg-amber-700 text-white font-bold px-3 py-2 rounded-xl text-xs flex items-center gap-1 shadow transition"
+                        >
+                          <RotateCcw size={14} /> {isResetting ? 'Restaurando...' : 'Restaurar Fábrica'}
+                        </button>
+                      )}
 
                       <div className="flex bg-gray-100 p-1 rounded-xl text-xs font-bold gap-1 flex-wrap">
                         <button onClick={() => setAdminSubTab('orders')} className={`px-3 py-2 rounded-lg ${adminSubTab === 'orders' ? 'bg-[#0b6b38] text-white shadow' : 'text-gray-600'}`}>📦 Pedidos</button>
-                        <button onClick={() => setAdminSubTab('paymethods')} className={`px-3 py-2 rounded-lg ${adminSubTab === 'paymethods' ? 'bg-cyan-700 text-white shadow' : 'text-gray-600'}`}>💳 Métodos de Pago y QR</button>
-                        <button onClick={() => setAdminSubTab('refunds')} className={`px-3 py-2 rounded-lg relative ${adminSubTab === 'refunds' ? 'bg-purple-700 text-white shadow' : 'text-gray-600'}`}>
-                          🔄 Devoluciones de Dinero
-                          {refundDebtOrders.length > 0 && (
-                            <span className="absolute -top-1 -right-1 bg-red-600 text-white text-[10px] w-4 h-4 rounded-full flex items-center justify-center font-black">
-                              {refundDebtOrders.length}
-                            </span>
-                          )}
-                        </button>
-                        <button onClick={() => setAdminSubTab('users')} className={`px-3 py-2 rounded-lg ${adminSubTab === 'users' ? 'bg-[#0b6b38] text-white shadow' : 'text-gray-600'}`}>👥 Privilegios y Personal</button>
-                        <button onClick={() => setAdminSubTab('corrupt')} className={`px-3 py-2 rounded-lg ${adminSubTab === 'corrupt' ? 'bg-red-600 text-white shadow' : 'text-gray-600'}`}>🚫 Pagos Corruptos ({corruptOrdersList.length})</button>
-                        <button onClick={() => setAdminSubTab('accounting')} className={`px-3 py-2 rounded-lg ${adminSubTab === 'accounting' ? 'bg-[#0b6b38] text-white shadow' : 'text-gray-600'}`}>📊 Contabilidad</button>
+                        {!isChofer && (
+                          <>
+                            <button onClick={() => setAdminSubTab('paymethods')} className={`px-3 py-2 rounded-lg ${adminSubTab === 'paymethods' ? 'bg-cyan-700 text-white shadow' : 'text-gray-600'}`}>💳 Métodos de Pago y QR</button>
+                            <button onClick={() => setAdminSubTab('refunds')} className={`px-3 py-2 rounded-lg relative ${adminSubTab === 'refunds' ? 'bg-purple-700 text-white shadow' : 'text-gray-600'}`}>
+                              🔄 Devoluciones
+                              {refundDebtOrders.length > 0 && (
+                                <span className="absolute -top-1 -right-1 bg-red-600 text-white text-[10px] w-4 h-4 rounded-full flex items-center justify-center font-black">
+                                  {refundDebtOrders.length}
+                                </span>
+                              )}
+                            </button>
+                            {isAdmin && <button onClick={() => setAdminSubTab('users')} className={`px-3 py-2 rounded-lg ${adminSubTab === 'users' ? 'bg-[#0b6b38] text-white shadow' : 'text-gray-600'}`}>👥 Personal</button>}
+                            <button onClick={() => setAdminSubTab('corrupt')} className={`px-3 py-2 rounded-lg ${adminSubTab === 'corrupt' ? 'bg-red-600 text-white shadow' : 'text-gray-600'}`}>🚫 Corruptos ({corruptOrdersList.length})</button>
+                            <button onClick={() => setAdminSubTab('accounting')} className={`px-3 py-2 rounded-lg ${adminSubTab === 'accounting' ? 'bg-[#0b6b38] text-white shadow' : 'text-gray-600'}`}>📊 Contabilidad</button>
+                          </>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -1588,6 +1601,15 @@ export default function App() {
                                   <Printer size={14} /> Imprimir
                                 </button>
 
+                                {/* BOTONES DE CAMBIO DE ESTADO (CHOFER / ADMIN) */}
+                                <button onClick={() => handleUpdateOrderStatus(order.id, 'Alistado')} className="bg-purple-600 text-white p-2 rounded-lg text-xs font-bold flex items-center gap-1">
+                                  <PackageCheck size={14} /> Alistado
+                                </button>
+
+                                <button onClick={() => handleUpdateOrderStatus(order.id, 'En Camino')} className="bg-indigo-600 text-white p-2 rounded-lg text-xs font-bold flex items-center gap-1">
+                                  <Truck size={14} /> En Camino
+                                </button>
+
                                 <button onClick={() => handleUpdateOrderStatus(order.id, 'Entregado')} className="bg-green-600 text-white p-2 rounded-lg text-xs font-bold flex items-center gap-1">
                                   <CheckCircle size={14} /> Entregado
                                 </button>
@@ -1598,80 +1620,89 @@ export default function App() {
                               </div>
                             </div>
 
-                            {/* BANDEJA DE ACCIONES ADMINISTRATIVAS Y OPERATIVAS (VISIBLE PARA ADMIN Y ENCARGADOS) */}
+                            {/* BANDEJA DE ACCIONES SEGÚN EL ROL (ESTRICTAMENTE SEPARADA) */}
                             <div className="bg-gray-50 p-3 rounded-xl border space-y-3">
                               <div className="flex justify-between items-center text-xs">
                                 <div>
-                                  <p className="font-bold text-gray-700">Acciones Administrativas / Operativas:</p>
-                                  <p className="text-gray-500">Registrar cobros, vueltos, facturas y pagos corruptos.</p>
+                                  <p className="font-bold text-gray-700">Acciones Permitidas para tu Rol ({userRole.toUpperCase()}):</p>
                                 </div>
                               </div>
 
                               <div className="flex flex-wrap items-center gap-2">
-                                <button 
-                                  onClick={() => {
-                                    setPayOrderId(order.id);
-                                    setSelectedPayMethodAdmin(order.paymentPreference || 'Efectivo');
-                                    setPayModalOpen(true);
-                                  }}
-                                  className={`px-3 py-2 rounded-xl font-bold text-xs flex items-center gap-1 shadow ${
-                                    order.isPaid ? 'bg-green-100 text-green-800 border border-green-300' : 'bg-blue-600 text-white hover:bg-blue-700'
-                                  }`}
-                                >
-                                  <CreditCard size={14} /> {order.isPaid ? '✅ Pagado' : '💵 Registrar Pago (Efectivo/Tarjeta)'}
-                                </button>
+                                {/* ACCIONES EXCLUSIVAS DEL CHOFER */}
+                                {(isChofer || isAdmin || isEncargado) && (
+                                  <>
+                                    <button 
+                                      onClick={() => {
+                                        setChangeOrderId(order.id);
+                                        setChangeAmountGiven(order.changeGivenRecord?.amount || '');
+                                        setChangeModalOpen(true);
+                                      }}
+                                      className="bg-teal-600 hover:bg-teal-700 text-white font-bold px-3 py-2 rounded-xl text-xs flex items-center gap-1 shadow"
+                                    >
+                                      <Banknote size={14} /> Vuelto Entregado
+                                    </button>
 
-                                <button 
-                                  onClick={() => {
-                                    setInvoiceOrderId(order.id);
-                                    setInvoiceModalOpen(true);
-                                  }}
-                                  className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-3 py-2 rounded-xl text-xs flex items-center gap-1 shadow"
-                                >
-                                  <Receipt size={14} /> Subir Factura
-                                </button>
+                                    <button 
+                                      onClick={() => {
+                                        setProductReturnOrderId(order.id);
+                                        setProductReturnModalOpen(true);
+                                      }}
+                                      className="bg-amber-600 hover:bg-amber-700 text-white font-bold px-3 py-2 rounded-xl text-xs flex items-center gap-1 shadow"
+                                    >
+                                      <ReturnIcon size={14} /> Dev. Producto
+                                    </button>
+                                  </>
+                                )}
 
-                                <button 
-                                  onClick={() => {
-                                    setFinalAmountOrderId(order.id);
-                                    setExactFinalAmount(order.total || '');
-                                    setFinalAmountModalOpen(true);
-                                  }}
-                                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-3 py-2 rounded-xl text-xs flex items-center gap-1 shadow"
-                                >
-                                  <DollarSign size={14} /> Monto Definitivo
-                                </button>
+                                {/* ACCIONES EXCLUSIVAS DE ADMINISTRADOR / CAJERA / ENCARGADO */}
+                                {(isAdmin || isEncargado || isCajera) && (
+                                  <>
+                                    <button 
+                                      onClick={() => {
+                                        setPayOrderId(order.id);
+                                        setSelectedPayMethodAdmin(order.paymentPreference || 'Efectivo');
+                                        setPayModalOpen(true);
+                                      }}
+                                      className={`px-3 py-2 rounded-xl font-bold text-xs flex items-center gap-1 shadow ${
+                                        order.isPaid ? 'bg-green-100 text-green-800 border border-green-300' : 'bg-blue-600 text-white hover:bg-blue-700'
+                                      }`}
+                                    >
+                                      <CreditCard size={14} /> {order.isPaid ? '✅ Pagado' : '💵 Registrar Pago'}
+                                    </button>
 
-                                <button 
-                                  onClick={() => {
-                                    setCorruptOrderId(order.id);
-                                    setCorruptModalOpen(true);
-                                  }}
-                                  className="bg-red-600 hover:bg-red-700 text-white font-bold px-3 py-2 rounded-xl text-xs flex items-center gap-1 shadow"
-                                >
-                                  <ShieldAlert size={14} /> Pago Corrupto / Bloquear
-                                </button>
+                                    <button 
+                                      onClick={() => {
+                                        setInvoiceOrderId(order.id);
+                                        setInvoiceModalOpen(true);
+                                      }}
+                                      className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-3 py-2 rounded-xl text-xs flex items-center gap-1 shadow"
+                                    >
+                                      <Receipt size={14} /> Subir Factura
+                                    </button>
 
-                                <button 
-                                  onClick={() => {
-                                    setChangeOrderId(order.id);
-                                    setChangeAmountGiven(order.changeGivenRecord?.amount || '');
-                                    setChangeModalOpen(true);
-                                  }}
-                                  className="bg-teal-600 hover:bg-teal-700 text-white font-bold px-3 py-2 rounded-xl text-xs flex items-center gap-1 shadow"
-                                >
-                                  <Banknote size={14} /> Vuelto Entregado
-                                </button>
+                                    <button 
+                                      onClick={() => {
+                                        setFinalAmountOrderId(order.id);
+                                        setExactFinalAmount(order.total || '');
+                                        setFinalAmountModalOpen(true);
+                                      }}
+                                      className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-3 py-2 rounded-xl text-xs flex items-center gap-1 shadow"
+                                    >
+                                      <DollarSign size={14} /> Monto Definitivo
+                                    </button>
 
-                                <button 
-                                  onClick={() => {
-                                    setProductReturnOrderId(order.id);
-                                    setProductReturnModalOpen(true);
-                                  }}
-                                  className="bg-amber-600 hover:bg-amber-700 text-white font-bold px-3 py-2 rounded-xl text-xs flex items-center gap-1 shadow"
-                                >
-                                  <ReturnIcon size={14} /> Dev. Producto
-                                </button>
+                                    <button 
+                                      onClick={() => {
+                                        setCorruptOrderId(order.id);
+                                        setCorruptModalOpen(true);
+                                      }}
+                                      className="bg-red-600 hover:bg-red-700 text-white font-bold px-3 py-2 rounded-xl text-xs flex items-center gap-1 shadow"
+                                    >
+                                      <ShieldAlert size={14} /> Pago Corrupto / Bloquear
+                                    </button>
+                                  </>
+                                )}
                               </div>
                             </div>
 
@@ -1681,7 +1712,7 @@ export default function App() {
                     </div>
                   )}
 
-                  {adminSubTab === 'paymethods' && (
+                  {adminSubTab === 'paymethods' && !isChofer && (
                     <div className="space-y-6">
                       <div className="bg-cyan-50 border border-cyan-200 p-5 rounded-2xl space-y-4">
                         <h3 className="font-bold text-base text-cyan-900 flex items-center gap-2">
@@ -1749,7 +1780,7 @@ export default function App() {
                     </div>
                   )}
 
-                  {adminSubTab === 'refunds' && (
+                  {adminSubTab === 'refunds' && !isChofer && (
                     <div className="space-y-4">
                       <h3 className="font-bold text-base text-purple-800 flex items-center gap-2">
                         <RefreshCw size={20} /> Gestión de Devolución de Dinero a Clientes
@@ -1818,7 +1849,7 @@ export default function App() {
                     </div>
                   )}
 
-                  {adminSubTab === 'users' && (
+                  {adminSubTab === 'users' && isAdmin && (
                     <div className="space-y-4">
                       <h3 className="font-bold text-base text-gray-800 flex items-center gap-2">
                         <ShieldCheck size={20} className="text-[#0b6b38]" /> Gestión de Privilegios y Roles de Personal
@@ -1913,7 +1944,7 @@ export default function App() {
                     </div>
                   )}
 
-                  {adminSubTab === 'corrupt' && (
+                  {adminSubTab === 'corrupt' && !isChofer && (
                     <div className="space-y-4">
                       <h3 className="font-bold text-base text-red-700 flex items-center gap-2">
                         <ShieldAlert size={20} /> Clientes con Pagos Corruptos y Bloqueados
@@ -1953,7 +1984,7 @@ export default function App() {
                     </div>
                   )}
 
-                  {adminSubTab === 'accounting' && (
+                  {adminSubTab === 'accounting' && !isChofer && (
                     <div className="space-y-6">
                       <div className="bg-green-50 border p-5 rounded-2xl flex justify-between items-center">
                         <div>
