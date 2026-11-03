@@ -25,7 +25,8 @@ import {
   DollarSign,
   PieChart,
   RefreshCw,
-  Lock
+  Lock,
+  RotateCcw
 } from 'lucide-react';
 import { auth, googleProvider, db, signInWithPopup, signOut } from './firebase';
 import { 
@@ -34,6 +35,8 @@ import {
   doc, 
   setDoc, 
   getDoc,
+  getDocs,
+  deleteDoc,
   onSnapshot,
   updateDoc
 } from 'firebase/firestore';
@@ -41,19 +44,20 @@ import {
 // API Key de Google Gemini
 const GEMINI_API_KEY = "AQ.Ab8RN6I6YA6ngJ0jFh7QWo6Fusf2aHbSLp3vbMahAu5WrUJu4A"; 
 
+const BASE_PRODUCTS = [
+  { name: 'Harina de Trigo 1kg', price: 4.50, category: 'Viveres', image: 'https://images.unsplash.com/photo-1574323347407-f5e1ad6d020b?w=300' },
+  { name: 'Aceite Vegetal 1L', price: 8.90, category: 'Viveres', image: 'https://images.unsplash.com/photo-1474979266404-7eaacbcd87c5?w=300' },
+  { name: 'Arroz Extra 1kg', price: 4.20, category: 'Viveres', image: 'https://images.unsplash.com/photo-1586201375761-83865001e31c?w=300' },
+  { name: 'Azúcar Rubia 1kg', price: 3.80, category: 'Viveres', image: 'https://images.unsplash.com/photo-1581441363689-1f3c3c414635?w=300' }
+];
+
 export default function App() {
   const [user, setUser] = useState(null);
   const [userRole, setUserRole] = useState('client'); 
   const [view, setView] = useState('catalog'); 
   const [adminSubTab, setAdminSubTab] = useState('orders'); // 'orders', 'accounting', 'returns'
   
-  const [products, setProducts] = useState([
-    { id: '1', name: 'Harina de Trigo 1kg', price: 4.50, category: 'Viveres', image: 'https://images.unsplash.com/photo-1574323347407-f5e1ad6d020b?w=300' },
-    { id: '2', name: 'Aceite Vegetal 1L', price: 8.90, category: 'Viveres', image: 'https://images.unsplash.com/photo-1474979266404-7eaacbcd87c5?w=300' },
-    { id: '3', name: 'Arroz Extra 1kg', price: 4.20, category: 'Viveres', image: 'https://images.unsplash.com/photo-1586201375761-83865001e31c?w=300' },
-    { id: '4', name: 'Azúcar Rubia 1kg', price: 3.80, category: 'Viveres', image: 'https://images.unsplash.com/photo-1581441363689-1f3c3c414635?w=300' }
-  ]);
-
+  const [products, setProducts] = useState(BASE_PRODUCTS.map((p, i) => ({ id: String(i + 1), ...p })));
   const [cart, setCart] = useState([]);
   const [orders, setOrders] = useState([]);
   const [selectedClientFilter, setSelectedClientFilter] = useState('all');
@@ -102,6 +106,7 @@ export default function App() {
 
   const [clientLocation, setClientLocation] = useState(null);
   const [locationLoading, setLocationLoading] = useState(false);
+  const [isResetting, setIsResetting] = useState(false);
 
   useEffect(() => {
     const unsubscribeProducts = onSnapshot(collection(db, 'products'), (snapshot) => {
@@ -175,6 +180,54 @@ export default function App() {
     signOut(auth).catch(() => {});
     setUser(null);
     setView('catalog');
+  };
+
+  // RESTAURAR VALORES DE FÁBRICA
+  const handleResetToFactorySettings = async () => {
+    const confirmReset = window.confirm(
+      "⚠️ ¿Estás seguro de que deseas restaurar los valores de fábrica?\n\nEsta acción eliminará TODOS los pedidos registrados, capturas de pago, historial de devoluciones y restablecerá el catálogo a los productos base."
+    );
+
+    if (!confirmReset) return;
+
+    setIsResetting(true);
+
+    try {
+      // 1. Eliminar todos los pedidos en Firestore
+      const ordersSnapshot = await getDocs(collection(db, 'orders'));
+      for (const orderDoc of ordersSnapshot.docs) {
+        await deleteDoc(doc(db, 'orders', orderDoc.id));
+      }
+
+      // 2. Eliminar todos los productos actuales en Firestore
+      const productsSnapshot = await getDocs(collection(db, 'products'));
+      for (const prodDoc of productsSnapshot.docs) {
+        await deleteDoc(doc(db, 'products', prodDoc.id));
+      }
+
+      // 3. Insertar nuevamente los productos base
+      for (const baseProd of BASE_PRODUCTS) {
+        await addDoc(collection(db, 'products'), {
+          ...baseProd,
+          createdAt: new Date()
+        });
+      }
+
+      // 4. Reiniciar estados locales
+      setCart([]);
+      setOrders([]);
+      setManualCaptureSum('');
+      setDayClosed(false);
+      setClosedDayData(null);
+      setSelectedClientFilter('all');
+
+      alert("🔄 ¡Los valores de fábrica han sido restaurados con éxito!");
+    } catch (error) {
+      console.error("Error restaurando valores:", error);
+      alert("Hubo un problema al intentar reiniciar la base de datos.");
+    } finally {
+      setIsResetting(false);
+    }
   };
 
   const addToCart = (product) => {
@@ -477,7 +530,6 @@ export default function App() {
   const captureSystemTotal = captureOrders.reduce((sum, o) => sum + Number(o.total), 0);
   const manualCaptureParsed = parseFloat(manualCaptureSum) || 0;
   
-  // Devoluciones y Restas automáticas
   const returnOrders = orders.filter(o => o.status === 'No se pudo entregar');
   const totalRefunded = returnOrders
     .filter(o => o.returnStatus === 'Devuelto')
@@ -654,7 +706,6 @@ export default function App() {
               )}
 
               <div className="mt-4 pt-3 border-t space-y-3">
-                {/* CONTACTO */}
                 <div>
                   <label className="text-[11px] font-bold text-gray-700 flex items-center gap-1 mb-1">
                     <Phone size={12} className="text-[#0b6b38]" /> Teléfono de contacto (Entrega): *
@@ -767,7 +818,7 @@ export default function App() {
           </div>
         )}
 
-        {/* PANEL ADMIN CON PESTAÑAS (PEDIDOS, CONTABILIDAD, DEVOLUCIONES) */}
+        {/* PANEL ADMIN CON BOTÓN DE VALORES DE FÁBRICA */}
         {view === 'admin' && userRole === 'admin' && (
           <div className="space-y-6 max-w-5xl mx-auto">
             <div className="bg-white p-6 rounded-2xl shadow border">
@@ -776,26 +827,38 @@ export default function App() {
                   <Settings className="text-[#0b6b38]" /> Panel de Administración PUNTO M
                 </h2>
                 
-                {/* NAVEGACIÓN DE PESTAÑAS */}
-                <div className="flex bg-gray-100 p-1 rounded-xl text-xs font-bold gap-1">
+                <div className="flex items-center gap-2">
+                  {/* BOTÓN PARA RESTAURAR VALORES DE FÁBRICA */}
                   <button 
-                    onClick={() => setAdminSubTab('orders')}
-                    className={`px-3 py-2 rounded-lg transition ${adminSubTab === 'orders' ? 'bg-[#0b6b38] text-white shadow' : 'text-gray-600 hover:bg-gray-200'}`}
+                    onClick={handleResetToFactorySettings}
+                    disabled={isResetting}
+                    className="bg-amber-600 hover:bg-amber-700 disabled:bg-gray-400 text-white font-bold px-3 py-2 rounded-xl text-xs flex items-center gap-1 shadow transition"
+                    title="Borrar pruebas y volver a productos base"
                   >
-                    📦 Gestión de Pedidos
+                    <RotateCcw size={14} /> {isResetting ? 'Restaurando...' : 'Restaurar Valores de Fábrica'}
                   </button>
-                  <button 
-                    onClick={() => setAdminSubTab('accounting')}
-                    className={`px-3 py-2 rounded-lg transition ${adminSubTab === 'accounting' ? 'bg-[#0b6b38] text-white shadow' : 'text-gray-600 hover:bg-gray-200'}`}
-                  >
-                    📊 Contabilidad del Día
-                  </button>
-                  <button 
-                    onClick={() => setAdminSubTab('returns')}
-                    className={`px-3 py-2 rounded-lg transition ${adminSubTab === 'returns' ? 'bg-[#0b6b38] text-white shadow' : 'text-gray-600 hover:bg-gray-200'}`}
-                  >
-                    🔄 Devoluciones ({orders.filter(o => o.status === 'No se pudo entregar').length})
-                  </button>
+
+                  {/* NAVEGACIÓN DE PESTAÑAS */}
+                  <div className="flex bg-gray-100 p-1 rounded-xl text-xs font-bold gap-1">
+                    <button 
+                      onClick={() => setAdminSubTab('orders')}
+                      className={`px-3 py-2 rounded-lg transition ${adminSubTab === 'orders' ? 'bg-[#0b6b38] text-white shadow' : 'text-gray-600 hover:bg-gray-200'}`}
+                    >
+                      📦 Pedidos
+                    </button>
+                    <button 
+                      onClick={() => setAdminSubTab('accounting')}
+                      className={`px-3 py-2 rounded-lg transition ${adminSubTab === 'accounting' ? 'bg-[#0b6b38] text-white shadow' : 'text-gray-600 hover:bg-gray-200'}`}
+                    >
+                      📊 Contabilidad
+                    </button>
+                    <button 
+                      onClick={() => setAdminSubTab('returns')}
+                      className={`px-3 py-2 rounded-lg transition ${adminSubTab === 'returns' ? 'bg-[#0b6b38] text-white shadow' : 'text-gray-600 hover:bg-gray-200'}`}
+                    >
+                      🔄 Devoluciones ({orders.filter(o => o.status === 'No se pudo entregar').length})
+                    </button>
+                  </div>
                 </div>
               </div>
 
@@ -917,9 +980,8 @@ export default function App() {
                     </div>
                   )}
 
-                  {/* DESGLOSE POR CLIENTE */}
                   <div className="border rounded-xl p-4 bg-gray-50 space-y-3">
-                    <h4 className="font-bold text-sm text-gray-800">Compras y Pagos Organizados por Clientes (Pagados / Entregados)</h4>
+                    <h4 className="font-bold text-sm text-gray-800">Compras y Pagos Organizados por Clientes</h4>
                     {paidOrders.length === 0 ? (
                       <p className="text-xs text-gray-400">No hay pagos registrados hoy.</p>
                     ) : (
@@ -942,12 +1004,10 @@ export default function App() {
                     )}
                   </div>
 
-                  {/* TOTALES Y CAPTURES MANUALES */}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="border p-4 rounded-xl bg-white space-y-2 text-xs">
                       <p className="font-bold text-gray-700">💵 Total Pagos en Efectivo:</p>
                       <p className="text-xl font-black text-green-700">S/ {cashTotal.toFixed(2)}</p>
-                      <p className="text-[11px] text-gray-500">Suma automática de todos los pedidos marcados en efectivo.</p>
                     </div>
 
                     <div className="border p-4 rounded-xl bg-white space-y-2 text-xs">
@@ -966,7 +1026,6 @@ export default function App() {
                     </div>
                   </div>
 
-                  {/* GRAN TOTAL */}
                   <div className="bg-[#0b6b38] text-white p-6 rounded-2xl shadow flex justify-between items-center">
                     <div>
                       <p className="text-xs uppercase tracking-widest text-green-200 font-bold">Sumatoria Total Final del Día</p>
