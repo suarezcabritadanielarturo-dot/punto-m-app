@@ -112,19 +112,16 @@ export default function App() {
   const [manualProductValue, setManualProductValue] = useState('');
   const [returnedProductsPhoto, setReturnedProductsPhoto] = useState('');
 
-  // Estados para Vuelto Entregado al Repartidor (Base)
   const [baseChangeModalOpen, setBaseChangeModalOpen] = useState(false);
   const [baseChangeOrderId, setBaseChangeOrderId] = useState(null);
   const [baseChangeAmount, setBaseChangeAmount] = useState('');
   const [baseChangeProofPhoto, setBaseChangeProofPhoto] = useState('');
 
-  // Estados para Vuelto que el Repartidor Entregó (Real al cliente)
   const [changeModalOpen, setChangeModalOpen] = useState(false);
   const [changeOrderId, setChangeOrderId] = useState(null);
   const [changeAmountGiven, setChangeAmountGiven] = useState('');
   const [changeProofPhoto, setChangeProofPhoto] = useState('');
 
-  // Estados para Devolución / Reembolso al Cliente
   const [refundModalOpen, setRefundModalOpen] = useState(false);
   const [refundOrderId, setRefundOrderId] = useState(null);
   const [refundAmount, setRefundAmount] = useState('');
@@ -419,9 +416,9 @@ export default function App() {
       corruptPhoto: '',
       returnedProductsList: [],
       returnedProductsPhoto: '',
-      baseChangeRecord: null, // Vuelto entregado al repartidor
-      changeGivenRecord: null, // Vuelto que el repartidor entregó
-      refundRecord: null, // Reembolso / devolución de dinero al cliente
+      baseChangeRecord: null,
+      changeGivenRecord: null,
+      refundRecord: null,
       failReason: '',
       returnStatus: 'No aplica',
       returnProof: '',
@@ -862,7 +859,6 @@ export default function App() {
   const filteredOrders = selectedClientFilter === 'all' ? orders.filter(o => !o.isCorrupt) : orders.filter(o => !o.isCorrupt && (o.clientEmail === selectedClientFilter || o.clientName === selectedClientFilter));
   const corruptOrdersList = orders.filter(o => o.isCorrupt === true);
   
-  // Órdenes donde se le debe dinero al cliente (o hubo devolución de productos con saldo a favor tras pago digital/tarjeta)
   const refundDebtOrders = orders.filter(o => {
     const finalTot = Number(o.total || o.approxTotal || 0);
     const origTot = Number(o.originalTotal || o.approxTotal || 0);
@@ -1397,9 +1393,8 @@ export default function App() {
                         const isCash = order.paymentPreference === 'Efectivo';
                         const cashCollected = isCash ? Number(order.cashPayAmount || finalTotal) : 0;
                         
-                        // Cálculo exacto que debe entregar el repartidor a la tienda:
-                        // Si es efectivo: (Efectivo cobrado + Vuelto base entregado al repartidor) menos (Vuelto real entregado al cliente).
-                        const totalToStore = isCash ? Math.max(0, cashCollected + baseChange - actualChangeGiven) : 0;
+                        // FÓRMULA CORREGIDA: El total que el repartidor entrega a la tienda es el total exacto del pedido
+                        const totalToStore = isCash ? finalTotal : 0;
 
                         return (
                           <div key={order.id} className="border p-4 rounded-xl bg-white shadow-sm flex flex-col justify-between gap-4">
@@ -1607,7 +1602,6 @@ export default function App() {
                     </div>
                   )}
 
-                  {/* PESTAÑA EXCLUSIVA: DEVOLUCIÓN DE DINERO (CASOS DONDE QUEDAMOS DEBIENDO) */}
                   {adminSubTab === 'refunds' && (
                     <div className="space-y-4">
                       <h3 className="font-bold text-base text-purple-800 flex items-center gap-2">
@@ -1828,7 +1822,6 @@ export default function App() {
               </div>
             )}
 
-            {/* MODALES PARA VUELTOS Y REEMBOLSOS */}
             {baseChangeModalOpen && (
               <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
                 <div className="bg-white p-6 rounded-2xl max-w-md w-full shadow-2xl space-y-4">
