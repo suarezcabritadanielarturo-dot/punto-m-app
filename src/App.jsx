@@ -55,7 +55,7 @@ export default function App() {
   const [user, setUser] = useState(null);
   const [userRole, setUserRole] = useState('client'); 
   const [view, setView] = useState('catalog'); 
-  const [adminSubTab, setAdminSubTab] = useState('orders'); // 'orders', 'accounting', 'returns'
+  const [adminSubTab, setAdminSubTab] = useState('orders');
   
   const [products, setProducts] = useState(BASE_PRODUCTS.map((p, i) => ({ id: String(i + 1), ...p })));
   const [cart, setCart] = useState([]);
@@ -107,6 +107,9 @@ export default function App() {
   const [clientLocation, setClientLocation] = useState(null);
   const [locationLoading, setLocationLoading] = useState(false);
   const [isResetting, setIsResetting] = useState(false);
+
+  // Fecha actual en formato YYYY-MM-DD para bloquear fechas pasadas en el input HTML
+  const todayStr = new Date().toISOString().split('T')[0];
 
   useEffect(() => {
     const unsubscribeProducts = onSnapshot(collection(db, 'products'), (snapshot) => {
@@ -182,10 +185,9 @@ export default function App() {
     setView('catalog');
   };
 
-  // RESTAURAR VALORES DE FÁBRICA
   const handleResetToFactorySettings = async () => {
     const confirmReset = window.confirm(
-      "⚠️ ¿Estás seguro de que deseas restaurar los valores de fábrica?\n\nEsta acción eliminará TODOS los pedidos registrados, capturas de pago, historial de devoluciones y restablecerá el catálogo a los productos base."
+      "⚠️ ¿Estás seguro de que deseas restaurar los valores de fábrica?\n\nEsta acción eliminará TODOS los pedidos registrados, capturas de pago y restablecerá el catálogo."
     );
 
     if (!confirmReset) return;
@@ -193,19 +195,16 @@ export default function App() {
     setIsResetting(true);
 
     try {
-      // 1. Eliminar todos los pedidos en Firestore
       const ordersSnapshot = await getDocs(collection(db, 'orders'));
       for (const orderDoc of ordersSnapshot.docs) {
         await deleteDoc(doc(db, 'orders', orderDoc.id));
       }
 
-      // 2. Eliminar todos los productos actuales en Firestore
       const productsSnapshot = await getDocs(collection(db, 'products'));
       for (const prodDoc of productsSnapshot.docs) {
         await deleteDoc(doc(db, 'products', prodDoc.id));
       }
 
-      // 3. Insertar nuevamente los productos base
       for (const baseProd of BASE_PRODUCTS) {
         await addDoc(collection(db, 'products'), {
           ...baseProd,
@@ -213,7 +212,6 @@ export default function App() {
         });
       }
 
-      // 4. Reiniciar estados locales
       setCart([]);
       setOrders([]);
       setManualCaptureSum('');
@@ -270,6 +268,7 @@ export default function App() {
     );
   };
 
+  // VALIDACIÓN DE FECHA, HORA Y HORARIO DE ATENCIÓN (10 AM A 7 PM)
   const handleGenerateReceipt = async () => {
     if (!user) {
       alert("⚠️ Debe iniciar sesión obligatoriamente antes de realizar un pedido.");
@@ -280,6 +279,40 @@ export default function App() {
       alert("⚠️ Por favor ingrese su número de teléfono de contacto para la entrega.");
       return;
     }
+    if (!deliveryDate || !deliveryTime) {
+      alert("⚠️ Por favor seleccione la fecha y hora preferida de entrega.");
+      return;
+    }
+
+    // Validar que la fecha no sea menor a hoy
+    const selectedDateObj = new Date(deliveryDate + 'T00:00:00');
+    const todayObj = new Date(new Date().toDateString());
+    if (selectedDateObj < todayObj) {
+      alert("⚠️ No puedes seleccionar una fecha anterior a la actual.");
+      return;
+    }
+
+    // Validar horario de atención (10:00 AM a 7:00 PM / 10:00 a 19:00)
+    const [hours, minutes] = deliveryTime.split(':').map(Number);
+    const totalMinutes = hours * 60 + minutes;
+    const openMinutes = 10 * 60; // 10:00 AM
+    const closeMinutes = 19 * 60; // 7:00 PM (19:00)
+
+    if (totalMinutes < openMinutes || totalMinutes > closeMinutes) {
+      alert("⚠️ El horario de atención de la tienda es de 10:00 AM a 7:00 PM. Por favor selecciona una hora dentro de este rango.");
+      return;
+    }
+
+    // Si es hoy, verificar que la hora no sea menor a la actual
+    if (deliveryDate === todayStr) {
+      const now = new Date();
+      const currentMinutes = now.getHours() * 60 + now.getMinutes();
+      if (totalMinutes < currentMinutes) {
+        alert("⚠️ No puedes seleccionar una hora que ya ha pasado el día de hoy.");
+        return;
+      }
+    }
+
     if (cart.length === 0) return;
 
     const newOrderData = {
@@ -290,8 +323,8 @@ export default function App() {
       items: cart,
       total: cartTotal,
       location: clientLocation || null,
-      deliveryDate: deliveryDate || 'Lo antes posible',
-      deliveryTime: deliveryTime || 'Horario abierto',
+      deliveryDate: deliveryDate,
+      deliveryTime: deliveryTime,
       status: 'Pendiente',
       paymentMethod: '',
       paymentProof: '',
@@ -513,6 +546,7 @@ export default function App() {
         <body style="font-family: Arial; padding: 20px; font-size: 12px;">
           <h2>PUNTO M - RUC 20123456789</h2>
           <p><strong>Cliente:</strong> ${orderToPrint.clientName} (${orderToPrint.clientPhone || 'Sin teléfono'})</p>
+          <p><strong>Horario de Entrega:</strong> ${orderToPrint.deliveryDate} a las ${orderToPrint.deliveryTime}</p>
           <p><strong>Estado:</strong> ${orderToPrint.status}</p>
           <table><tbody>${itemsHtml}</tbody></table>
           <h3>Total: S/ ${Number(orderToPrint.total).toFixed(2)}</h3>
@@ -523,7 +557,6 @@ export default function App() {
     printWindow.document.close();
   };
 
-  // Cálculos Contabilidad
   const paidOrders = orders.filter(o => o.status === 'Pagado' || o.status === 'Entregado');
   const cashTotal = paidOrders.filter(o => o.paymentMethod === 'Efectivo').reduce((sum, o) => sum + Number(o.total), 0);
   const captureOrders = paidOrders.filter(o => o.paymentMethod === 'Transferencia / Capture');
@@ -616,7 +649,6 @@ export default function App() {
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div className="lg:col-span-2 space-y-6">
               
-              {/* ASISTENTE IA */}
               <div className="bg-white p-4 rounded-xl shadow-sm border border-green-200">
                 <h3 className="font-bold text-sm text-green-900 mb-1 flex items-center gap-2">
                   <Sparkles size={16} className="text-[#0b6b38]" /> Asistente de Pedidos IA
@@ -721,11 +753,25 @@ export default function App() {
 
                 <div className="bg-gray-50 p-2.5 rounded-lg border text-xs space-y-2">
                   <p className="font-bold text-gray-700 flex items-center gap-1">
-                    <Calendar size={14} className="text-[#0b6b38]" /> Fecha y hora preferida de entrega:
+                    <Calendar size={14} className="text-[#0b6b38]" /> Entrega (Horario: 10:00 AM - 7:00 PM): *
                   </p>
                   <div className="grid grid-cols-2 gap-2">
-                    <input type="date" value={deliveryDate} onChange={e => setDeliveryDate(e.target.value)} className="border p-1 rounded text-xs bg-white" />
-                    <input type="time" value={deliveryTime} onChange={e => setDeliveryTime(e.target.value)} className="border p-1 rounded text-xs bg-white" />
+                    {/* min={todayStr} bloquea fechas anteriores en el calendario */}
+                    <input 
+                      type="date" 
+                      min={todayStr}
+                      value={deliveryDate} 
+                      onChange={e => setDeliveryDate(e.target.value)} 
+                      className="border p-1 rounded text-xs bg-white" 
+                    />
+                    <input 
+                      type="time" 
+                      min="10:00" 
+                      max="19:00"
+                      value={deliveryTime} 
+                      onChange={e => setDeliveryTime(e.target.value)} 
+                      className="border p-1 rounded text-xs bg-white" 
+                    />
                   </div>
                 </div>
 
@@ -766,6 +812,7 @@ export default function App() {
               <p className="text-xs font-mono text-gray-600">{companyHeader.rif}</p>
               <p className="text-xs text-gray-500">Tel: {companyHeader.phone}</p>
               <p className="text-xs font-bold text-[#0b6b38] mt-2">Cliente: {user?.name} | Telf: {clientPhone}</p>
+              <p className="text-xs text-gray-600 mt-1">Horario Atención Tienda: 10:00 AM - 7:00 PM</p>
             </div>
 
             <table className="w-full text-xs mb-4">
@@ -798,7 +845,7 @@ export default function App() {
                   `🛒 *NUEVO PEDIDO - PUNTO M*\n` +
                   `👤 *Cliente:* ${user ? user.name : 'Cliente'}\n` +
                   `📞 *Teléfono:* ${clientPhone}\n` +
-                  `📅 *Entrega:* ${deliveryDate || 'Lo antes posible'} - ${deliveryTime || 'Horario abierto'}\n` +
+                  `📅 *Entrega:* ${deliveryDate} a las ${deliveryTime} (Horario tienda 10am-7pm)\n` +
                   `-----------------------------------\n` +
                   `📋 *Detalle:*\n` + cart.map(i => `• ${i.qty}x ${i.name} - S/ ${(i.price * i.qty).toFixed(2)}`).join('\n') + `\n` +
                   `-----------------------------------\n` +
@@ -818,7 +865,7 @@ export default function App() {
           </div>
         )}
 
-        {/* PANEL ADMIN CON BOTÓN DE VALORES DE FÁBRICA */}
+        {/* PANEL ADMIN */}
         {view === 'admin' && userRole === 'admin' && (
           <div className="space-y-6 max-w-5xl mx-auto">
             <div className="bg-white p-6 rounded-2xl shadow border">
@@ -828,17 +875,14 @@ export default function App() {
                 </h2>
                 
                 <div className="flex items-center gap-2">
-                  {/* BOTÓN PARA RESTAURAR VALORES DE FÁBRICA */}
                   <button 
                     onClick={handleResetToFactorySettings}
                     disabled={isResetting}
                     className="bg-amber-600 hover:bg-amber-700 disabled:bg-gray-400 text-white font-bold px-3 py-2 rounded-xl text-xs flex items-center gap-1 shadow transition"
-                    title="Borrar pruebas y volver a productos base"
                   >
                     <RotateCcw size={14} /> {isResetting ? 'Restaurando...' : 'Restaurar Valores de Fábrica'}
                   </button>
 
-                  {/* NAVEGACIÓN DE PESTAÑAS */}
                   <div className="flex bg-gray-100 p-1 rounded-xl text-xs font-bold gap-1">
                     <button 
                       onClick={() => setAdminSubTab('orders')}
@@ -862,7 +906,6 @@ export default function App() {
                 </div>
               </div>
 
-              {/* PESTAÑA 1: GESTIÓN DE PEDIDOS */}
               {adminSubTab === 'orders' && (
                 <div className="mb-8 space-y-4">
                   <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
@@ -900,7 +943,7 @@ export default function App() {
                             </div>
                             <p className="text-gray-500">📞 Telf: {order.clientPhone || 'No registrado'} | Email: {order.clientEmail || 'N/A'}</p>
                             <p className="text-gray-700 font-bold flex items-center gap-1">
-                              <Calendar size={12} className="text-[#0b6b38]" /> Entrega: {order.deliveryDate || 'N/A'} a las {order.deliveryTime || 'N/A'}
+                              <Calendar size={12} className="text-[#0b6b38]" /> Entrega: {order.deliveryDate} a las {order.deliveryTime}
                             </p>
                             <p className="text-gray-600 font-medium">Items: {order.items ? order.items.map(i => `${i.qty}x ${i.name}`).join(', ') : 'Sin detalle'}</p>
                             <p className="font-bold text-green-800 text-xs">Total aprox: S/ {Number(order.total).toFixed(2)}</p>
@@ -949,7 +992,6 @@ export default function App() {
                 </div>
               )}
 
-              {/* PESTAÑA 2: CONTABILIDAD */}
               {adminSubTab === 'accounting' && (
                 <div className="space-y-6">
                   <div className="bg-green-50 border border-green-200 p-5 rounded-2xl flex flex-col md:flex-row justify-between items-center gap-4">
@@ -1037,7 +1079,6 @@ export default function App() {
                 </div>
               )}
 
-              {/* PESTAÑA 3: DEVOLUCIONES */}
               {adminSubTab === 'returns' && (
                 <div className="space-y-4">
                   <h3 className="font-bold text-base text-gray-800 flex items-center gap-2">
@@ -1088,7 +1129,6 @@ export default function App() {
                 </div>
               )}
 
-              {/* IMPORTADOR GEMINI */}
               <div className="bg-green-50 p-5 rounded-xl border border-green-200 mt-8 mb-6">
                 <h3 className="font-bold text-sm text-green-900 mb-2 flex items-center gap-2">
                   <Sparkles size={18} className="text-[#0b6b38]" /> Importador Inteligente Gemini IA
@@ -1105,7 +1145,6 @@ export default function App() {
                 </button>
               </div>
 
-              {/* REGISTRO MANUAL */}
               <div className="border-t pt-4">
                 <h3 className="font-bold text-sm text-gray-700 mb-3">Agregar Producto Manual</h3>
                 <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 mb-3">
@@ -1131,7 +1170,6 @@ export default function App() {
           </div>
         )}
 
-        {/* MODAL PAGO */}
         {payModalOpen && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
             <div className="bg-white p-6 rounded-2xl max-w-md w-full shadow-2xl space-y-4">
@@ -1150,7 +1188,6 @@ export default function App() {
           </div>
         )}
 
-        {/* MODAL FALLO */}
         {failModalOpen && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
             <div className="bg-white p-6 rounded-2xl max-w-md w-full shadow-2xl space-y-4">
@@ -1164,7 +1201,6 @@ export default function App() {
           </div>
         )}
 
-        {/* MODAL DEVOLUCIÓN */}
         {returnModalOpen && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
             <div className="bg-white p-6 rounded-2xl max-w-md w-full shadow-2xl space-y-4">
@@ -1182,7 +1218,6 @@ export default function App() {
           </div>
         )}
 
-        {/* PREVIEW IMAGEN */}
         {previewImage && (
           <div className="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-50 p-4" onClick={() => setPreviewImage(null)}>
             <div className="bg-white p-4 rounded-2xl max-w-lg w-full shadow-2xl relative space-y-3">
