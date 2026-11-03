@@ -960,7 +960,6 @@ export default function App() {
     }
   });
 
-  // El Administrador o cualquier rol administrativo tiene acceso completo al panel de gestión
   const isAdminOrManager = userRole === 'admin' || userRole === 'encargado' || userRole === 'contabilidad' || userRole === 'supervisor' || userRole === 'chofer' || userRole === 'cajera';
 
   return (
@@ -1599,10 +1598,13 @@ export default function App() {
                               </div>
                             </div>
 
-                            <div className="bg-gray-50 p-3 rounded-xl border flex flex-col sm:flex-row justify-between items-center gap-3">
-                              <div className="text-xs">
-                                <p className="font-bold text-gray-700">Acciones Administrativas / Operativas:</p>
-                                <p className="text-gray-500">Registrar cobros, vueltos y devoluciones.</p>
+                            {/* BANDEJA DE ACCIONES ADMINISTRATIVAS Y OPERATIVAS (VISIBLE PARA ADMIN Y ENCARGADOS) */}
+                            <div className="bg-gray-50 p-3 rounded-xl border space-y-3">
+                              <div className="flex justify-between items-center text-xs">
+                                <div>
+                                  <p className="font-bold text-gray-700">Acciones Administrativas / Operativas:</p>
+                                  <p className="text-gray-500">Registrar cobros, vueltos, facturas y pagos corruptos.</p>
+                                </div>
                               </div>
 
                               <div className="flex flex-wrap items-center gap-2">
@@ -1617,6 +1619,37 @@ export default function App() {
                                   }`}
                                 >
                                   <CreditCard size={14} /> {order.isPaid ? '✅ Pagado' : '💵 Registrar Pago (Efectivo/Tarjeta)'}
+                                </button>
+
+                                <button 
+                                  onClick={() => {
+                                    setInvoiceOrderId(order.id);
+                                    setInvoiceModalOpen(true);
+                                  }}
+                                  className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-3 py-2 rounded-xl text-xs flex items-center gap-1 shadow"
+                                >
+                                  <Receipt size={14} /> Subir Factura
+                                </button>
+
+                                <button 
+                                  onClick={() => {
+                                    setFinalAmountOrderId(order.id);
+                                    setExactFinalAmount(order.total || '');
+                                    setFinalAmountModalOpen(true);
+                                  }}
+                                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-3 py-2 rounded-xl text-xs flex items-center gap-1 shadow"
+                                >
+                                  <DollarSign size={14} /> Monto Definitivo
+                                </button>
+
+                                <button 
+                                  onClick={() => {
+                                    setCorruptOrderId(order.id);
+                                    setCorruptModalOpen(true);
+                                  }}
+                                  className="bg-red-600 hover:bg-red-700 text-white font-bold px-3 py-2 rounded-xl text-xs flex items-center gap-1 shadow"
+                                >
+                                  <ShieldAlert size={14} /> Pago Corrupto / Bloquear
                                 </button>
 
                                 <button 
@@ -1946,6 +1979,85 @@ export default function App() {
             )}
 
             {/* MODALES */}
+            {invoiceModalOpen && (
+              <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+                <div className="bg-white p-6 rounded-2xl max-w-md w-full shadow-2xl space-y-4">
+                  <h3 className="font-bold text-base text-indigo-700 flex items-center gap-2">
+                    <Receipt size={20} /> Subir Factura Oficial
+                  </h3>
+                  <p className="text-xs text-gray-600">Adjunte la foto o archivo digital de la factura emitida para este pedido:</p>
+
+                  <div className="space-y-1 bg-indigo-50 p-3 rounded-xl border border-indigo-200 text-xs">
+                    <label className="cursor-pointer bg-white border-2 border-dashed border-indigo-400 text-gray-800 font-bold py-3 px-2 rounded-lg flex items-center justify-center gap-2">
+                      <Upload size={16} /> <span>{invoicePhoto ? '✅ Factura cargada' : 'Seleccionar archivo de factura'}</span>
+                      <input type="file" accept="image/*" onChange={handleInvoicePhotoUpload} className="hidden" />
+                    </label>
+                  </div>
+
+                  <div className="flex justify-end gap-2 pt-2">
+                    <button onClick={() => { setInvoiceModalOpen(false); setInvoiceOrderId(null); setInvoicePhoto(''); }} className="bg-gray-200 text-gray-700 font-bold px-4 py-2 rounded-lg text-xs">Cancelar</button>
+                    <button onClick={handleSaveInvoice} className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-4 py-2 rounded-lg text-xs shadow">Guardar y Facturar</button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {finalAmountModalOpen && (
+              <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+                <div className="bg-white p-6 rounded-2xl max-w-md w-full shadow-2xl space-y-4">
+                  <h3 className="font-bold text-base text-emerald-700 flex items-center gap-2">
+                    <DollarSign size={20} /> Asignar Monto Definitivo
+                  </h3>
+                  <p className="text-xs text-gray-600">Ingrese el monto exacto definitivo tras pesar o verificar los productos:</p>
+
+                  <input 
+                    type="number"
+                    step="0.01"
+                    value={exactFinalAmount}
+                    onChange={e => setExactFinalAmount(e.target.value)}
+                    placeholder="Monto definitivo (Ej. 8.40)"
+                    className="w-full border p-2.5 rounded-lg text-sm font-bold text-emerald-900"
+                  />
+
+                  <div className="flex justify-end gap-2 pt-2">
+                    <button onClick={() => { setFinalAmountModalOpen(false); setFinalAmountOrderId(null); setExactFinalAmount(''); }} className="bg-gray-200 text-gray-700 font-bold px-4 py-2 rounded-lg text-xs">Cancelar</button>
+                    <button onClick={handleSaveFinalAmount} className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-4 py-2 rounded-lg text-xs shadow">Guardar Monto</button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {corruptModalOpen && (
+              <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+                <div className="bg-white p-6 rounded-2xl max-w-md w-full shadow-2xl space-y-4">
+                  <h3 className="font-bold text-base text-red-600 flex items-center gap-2">
+                    <ShieldAlert size={20} /> Registrar Pago Corrupto / Bloquear Cliente
+                  </h3>
+                  <p className="text-xs text-gray-600">Indique el motivo por el cual el pago o billete presenta una incidencia y suba la foto como evidencia:</p>
+
+                  <textarea 
+                    rows="3" 
+                    value={corruptReason} 
+                    onChange={e => setCorruptReason(e.target.value)} 
+                    placeholder="Ej. Billete falso, transferencia no reflejada..." 
+                    className="w-full border p-2.5 rounded-lg text-xs"
+                  />
+
+                  <div className="space-y-1 bg-red-50 p-3 rounded-xl border border-red-200 text-xs">
+                    <label className="cursor-pointer bg-white border-2 border-dashed border-red-400 text-gray-800 font-bold py-2 px-2 rounded-lg flex items-center justify-center gap-1">
+                      <Upload size={14} /> <span>{corruptPhoto ? '✅ Evidencia cargada' : 'Subir foto del billete/comprobante'}</span>
+                      <input type="file" accept="image/*" onChange={handleCorruptPhotoUpload} className="hidden" />
+                    </label>
+                  </div>
+
+                  <div className="flex justify-end gap-2 pt-2">
+                    <button onClick={() => { setCorruptModalOpen(false); setCorruptOrderId(null); setCorruptReason(''); setCorruptPhoto(''); }} className="bg-gray-200 text-gray-700 font-bold px-4 py-2 rounded-lg text-xs">Cancelar</button>
+                    <button onClick={handleSaveCorruptPayment} className="bg-red-600 hover:bg-red-700 text-white font-bold px-4 py-2 rounded-lg text-xs shadow">Bloquear y Registrar Incidencia</button>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {changeModalOpen && (
               <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
                 <div className="bg-white p-6 rounded-2xl max-w-md w-full shadow-2xl space-y-4">
