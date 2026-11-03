@@ -734,13 +734,17 @@ export default function App() {
       alert("⚠️ Ingrese un monto de vuelto base válido.");
       return;
     }
+    if (!baseChangeProofPhoto) {
+      alert("⚠️ Adjunte la foto del dinero entregado como base.");
+      return;
+    }
 
     try {
       const orderRef = doc(db, 'orders', baseChangeOrderId);
       await updateDoc(orderRef, {
         baseChangeRecord: {
           amount: val,
-          photo: baseChangeProofPhoto || '',
+          photo: baseChangeProofPhoto,
           date: new Date().toISOString()
         }
       });
@@ -748,7 +752,7 @@ export default function App() {
       setBaseChangeOrderId(null);
       setBaseChangeAmount('');
       setBaseChangeProofPhoto('');
-      alert("✅ ¡Vuelto entregado al repartidor registrado con éxito!");
+      alert("✅ ¡Vuelto base entregado al repartidor registrado con éxito!");
     } catch (err) {
       console.error(err);
     }
@@ -760,13 +764,17 @@ export default function App() {
       alert("⚠️ Ingrese un monto de vuelto válido.");
       return;
     }
+    if (!changeProofPhoto) {
+      alert("⚠️ Adjunte la foto del comprobante o recibo de vuelto.");
+      return;
+    }
 
     try {
       const orderRef = doc(db, 'orders', changeOrderId);
       await updateDoc(orderRef, {
         changeGivenRecord: {
           amount: changeVal,
-          photo: changeProofPhoto || '',
+          photo: changeProofPhoto,
           date: new Date().toISOString()
         }
       });
@@ -1660,6 +1668,17 @@ export default function App() {
                                   <>
                                     <button 
                                       onClick={() => {
+                                        setBaseChangeOrderId(order.id);
+                                        setBaseChangeAmount(order.baseChangeRecord?.amount || '');
+                                        setBaseChangeModalOpen(true);
+                                      }}
+                                      className="bg-cyan-600 hover:bg-cyan-700 text-white font-bold px-3 py-2 rounded-xl text-xs flex items-center gap-1 shadow"
+                                    >
+                                      <Banknote size={14} /> Vuelto al Repartidor (Base)
+                                    </button>
+
+                                    <button 
+                                      onClick={() => {
                                         setPayOrderId(order.id);
                                         setSelectedPayMethodAdmin(order.paymentPreference || 'Efectivo');
                                         setPayModalOpen(true);
@@ -1742,8 +1761,8 @@ export default function App() {
                           <div className="space-y-1">
                             <label className="text-xs font-bold text-gray-700">Imagen / Código QR (Opcional):</label>
                             <label className="cursor-pointer bg-white border-2 border-dashed border-cyan-400 text-gray-800 font-bold py-2 px-3 rounded-lg flex items-center justify-center gap-2 text-xs">
-                              <Upload size={14} /> <span>{newPayImage ? '✅ Imagen / QR cargado' : 'Subir Imagen o QR'}</span>
-                              <input type="file" accept="image/*" onChange={handleNewPayImageUpload} className="hidden" />
+                              <Camera size={14} /> <span>{newPayImage ? '✅ Imagen / QR cargado' : 'Tomar foto o subir QR'}</span>
+                              <input type="file" accept="image/*" capture="environment" onChange={handleNewPayImageUpload} className="hidden" />
                             </label>
                           </div>
                           <button type="submit" className="bg-cyan-700 hover:bg-cyan-800 text-white font-bold px-4 py-2.5 rounded-xl text-xs shadow transition">
@@ -2010,18 +2029,51 @@ export default function App() {
             )}
 
             {/* MODALES */}
+            {baseChangeModalOpen && (
+              <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+                <div className="bg-white p-6 rounded-2xl max-w-md w-full shadow-2xl space-y-4">
+                  <h3 className="font-bold text-base text-cyan-700 flex items-center gap-2">
+                    <Banknote size={20} /> Vuelto al Repartidor (Base Inicial)
+                  </h3>
+                  <p className="text-xs text-gray-600">Ingrese el monto de dinero base que se le entrega al chofer para dar vuelto y tome/adjunte la foto como evidencia:</p>
+
+                  <input 
+                    type="number"
+                    step="0.01"
+                    value={baseChangeAmount}
+                    onChange={e => setBaseChangeAmount(e.target.value)}
+                    placeholder="Ej. 20.00"
+                    className="w-full border p-2.5 rounded-lg text-sm font-bold text-cyan-900"
+                  />
+
+                  <div className="space-y-1 bg-cyan-50 p-3 rounded-xl border border-cyan-200 text-xs">
+                    <p className="font-bold text-cyan-900 flex items-center gap-1"><Camera size={14} /> Foto del Dinero / Vuelto Entregado: *</p>
+                    <label className="cursor-pointer bg-white border-2 border-dashed border-cyan-400 text-gray-800 font-bold py-2 px-2 rounded-lg flex items-center justify-center gap-1">
+                      <Camera size={14} /> <span>{baseChangeProofPhoto ? '✅ Foto lista' : 'Tomar foto con cámara o galería'}</span>
+                      <input type="file" accept="image/*" capture="environment" onChange={handleBaseChangeProofUpload} className="hidden" />
+                    </label>
+                  </div>
+
+                  <div className="flex justify-end gap-2 pt-2">
+                    <button onClick={() => { setBaseChangeModalOpen(false); setBaseChangeOrderId(null); setBaseChangeAmount(''); setBaseChangeProofPhoto(''); }} className="bg-gray-200 text-gray-700 font-bold px-4 py-2 rounded-lg text-xs">Cancelar</button>
+                    <button onClick={handleSaveBaseChange} className="bg-cyan-600 hover:bg-cyan-700 text-white font-bold px-4 py-2 rounded-lg text-xs shadow">Guardar Vuelto Base</button>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {invoiceModalOpen && (
               <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
                 <div className="bg-white p-6 rounded-2xl max-w-md w-full shadow-2xl space-y-4">
                   <h3 className="font-bold text-base text-indigo-700 flex items-center gap-2">
                     <Receipt size={20} /> Subir Factura Oficial
                   </h3>
-                  <p className="text-xs text-gray-600">Adjunte la foto o archivo digital de la factura emitida para este pedido:</p>
+                  <p className="text-xs text-gray-600">Adjunte o tome la foto de la factura emitida para este pedido:</p>
 
                   <div className="space-y-1 bg-indigo-50 p-3 rounded-xl border border-indigo-200 text-xs">
                     <label className="cursor-pointer bg-white border-2 border-dashed border-indigo-400 text-gray-800 font-bold py-3 px-2 rounded-lg flex items-center justify-center gap-2">
-                      <Upload size={16} /> <span>{invoicePhoto ? '✅ Factura cargada' : 'Seleccionar archivo de factura'}</span>
-                      <input type="file" accept="image/*" onChange={handleInvoicePhotoUpload} className="hidden" />
+                      <Camera size={16} /> <span>{invoicePhoto ? '✅ Factura cargada' : 'Tomar foto o seleccionar archivo'}</span>
+                      <input type="file" accept="image/*" capture="environment" onChange={handleInvoicePhotoUpload} className="hidden" />
                     </label>
                   </div>
 
@@ -2064,7 +2116,7 @@ export default function App() {
                   <h3 className="font-bold text-base text-red-600 flex items-center gap-2">
                     <ShieldAlert size={20} /> Registrar Pago Corrupto / Bloquear Cliente
                   </h3>
-                  <p className="text-xs text-gray-600">Indique el motivo por el cual el pago o billete presenta una incidencia y suba la foto como evidencia:</p>
+                  <p className="text-xs text-gray-600">Indique el motivo por el cual el pago o billete presenta una incidencia y tome la foto como evidencia:</p>
 
                   <textarea 
                     rows="3" 
@@ -2076,8 +2128,8 @@ export default function App() {
 
                   <div className="space-y-1 bg-red-50 p-3 rounded-xl border border-red-200 text-xs">
                     <label className="cursor-pointer bg-white border-2 border-dashed border-red-400 text-gray-800 font-bold py-2 px-2 rounded-lg flex items-center justify-center gap-1">
-                      <Upload size={14} /> <span>{corruptPhoto ? '✅ Evidencia cargada' : 'Subir foto del billete/comprobante'}</span>
-                      <input type="file" accept="image/*" onChange={handleCorruptPhotoUpload} className="hidden" />
+                      <Camera size={14} /> <span>{corruptPhoto ? '✅ Evidencia cargada' : 'Tomar foto del billete/comprobante'}</span>
+                      <input type="file" accept="image/*" capture="environment" onChange={handleCorruptPhotoUpload} className="hidden" />
                     </label>
                   </div>
 
@@ -2109,8 +2161,8 @@ export default function App() {
                   <div className="space-y-1 bg-teal-50 p-3 rounded-xl border border-teal-200 text-xs">
                     <p className="font-bold text-teal-900 flex items-center gap-1"><Camera size={14} /> Foto del Vuelto Entregado: *</p>
                     <label className="cursor-pointer bg-white border-2 border-dashed border-teal-400 text-gray-800 font-bold py-2 px-2 rounded-lg flex items-center justify-center gap-1">
-                      <Upload size={14} /> <span>{changeProofPhoto ? '✅ Foto cargada' : 'Seleccionar foto'}</span>
-                      <input type="file" accept="image/*" onChange={handleChangeProofPhotoUpload} className="hidden" />
+                      <Camera size={14} /> <span>{changeProofPhoto ? '✅ Foto cargada' : 'Tomar foto con cámara'}</span>
+                      <input type="file" accept="image/*" capture="environment" onChange={handleChangeProofPhotoUpload} className="hidden" />
                     </label>
                   </div>
 
@@ -2150,8 +2202,8 @@ export default function App() {
                   <div className="space-y-1 bg-amber-50 p-3 rounded-xl border border-amber-200 text-xs">
                     <p className="font-bold text-amber-900 flex items-center gap-1"><Camera size={14} /> [Foto del Producto Devuelto]: *</p>
                     <label className="cursor-pointer bg-white border-2 border-dashed border-amber-400 text-gray-800 font-bold py-2 px-2 rounded-lg flex items-center justify-center gap-1">
-                      <Upload size={14} /> <span>{returnedProductsPhoto ? '✅ Foto cargada' : 'Seleccionar foto'}</span>
-                      <input type="file" accept="image/*" onChange={handleReturnedProductsPhotoUpload} className="hidden" />
+                      <Camera size={14} /> <span>{returnedProductsPhoto ? '✅ Foto cargada' : 'Tomar foto con cámara'}</span>
+                      <input type="file" accept="image/*" capture="environment" onChange={handleReturnedProductsPhotoUpload} className="hidden" />
                     </label>
                   </div>
 
@@ -2198,7 +2250,7 @@ export default function App() {
                     <div className="space-y-1 bg-green-50 p-2.5 rounded-xl border border-green-200 text-xs">
                       <p className="font-bold text-green-900 flex items-center gap-1"><Camera size={14} /> [Foto del Efectivo Recibido]: *</p>
                       <label className="cursor-pointer bg-white border-2 border-dashed border-green-400 text-gray-800 font-bold py-2 px-2 rounded-lg flex items-center justify-center gap-1">
-                        <Upload size={14} /> <span>{cashPhoto ? '✅ Foto lista' : 'Tomar foto del dinero'}</span>
+                        <Camera size={14} /> <span>{cashPhoto ? '✅ Foto lista' : 'Tomar foto del dinero'}</span>
                         <input type="file" accept="image/*" capture="environment" onChange={handleCashPhotoUpload} className="hidden" />
                       </label>
                     </div>
@@ -2208,8 +2260,8 @@ export default function App() {
                     <div className="space-y-1 bg-purple-50 p-2.5 rounded-xl border border-purple-200 text-xs">
                       <p className="font-bold text-purple-900 flex items-center gap-1"><Camera size={14} /> [Foto del Pago Digital / Capture]:</p>
                       <label className="cursor-pointer bg-white border-2 border-dashed border-purple-400 text-gray-800 font-bold py-2 px-2 rounded-lg flex items-center justify-center gap-1">
-                        <Upload size={14} /> <span>{cashPhoto ? '✅ Capture listo' : 'Subir capture digital'}</span>
-                        <input type="file" accept="image/*" onChange={handleCashPhotoUpload} className="hidden" />
+                        <Camera size={14} /> <span>{cashPhoto ? '✅ Capture listo' : 'Tomar o subir capture digital'}</span>
+                        <input type="file" accept="image/*" capture="environment" onChange={handleCashPhotoUpload} className="hidden" />
                       </label>
                     </div>
                   )}
