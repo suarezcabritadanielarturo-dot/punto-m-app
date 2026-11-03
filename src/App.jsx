@@ -82,6 +82,11 @@ export default function App() {
   const [selectedPayMethodAdmin, setSelectedPayMethodAdmin] = useState('');
   const [cashPhoto, setCashPhoto] = useState('');
 
+  // Modal para Ingresar Monto Definitivo tras Facturar
+  const [finalAmountModalOpen, setFinalAmountModalOpen] = useState(false);
+  const [finalAmountOrderId, setFinalAmountOrderId] = useState(null);
+  const [exactFinalAmount, setExactFinalAmount] = useState('');
+
   const [returnModalOpen, setReturnModalOpen] = useState(false);
   const [returnOrderId, setReturnOrderId] = useState(null);
   const [returnProof, setReturnProof] = useState('');
@@ -278,16 +283,18 @@ export default function App() {
       clientEmail: user.email,
       clientPhone: clientPhone,
       items: cart,
-      total: cartTotal,
+      approxTotal: cartTotal, // Guardamos explícitamente el aproximado
+      total: cartTotal, // Se actualizará al ingresar el monto real facturado
+      hasExactAmount: false,
       location: clientLocation || null,
       deliveryDate: deliveryDate,
       deliveryTime: deliveryTime,
       paymentPreference: paymentPreference,
       paymentTiming: paymentTiming,
       status: 'Pendiente',
-      isPaid: false, // Estado de pago booleano
+      isPaid: false,
       paymentMethod: '',
-      invoicePhoto: '', // Foto de la factura subida por el admin
+      invoicePhoto: '',
       cashPhoto: '',
       failReason: '',
       returnStatus: 'No aplica',
@@ -390,7 +397,7 @@ export default function App() {
     }
 
     await handleUpdateOrderStatus(invoiceOrderId, 'Facturado', {
-      isPaid: true, // Marca como pagado (cambia a verde)
+      isPaid: true,
       paymentMethod: selectedPayMethodAdmin,
       invoicePhoto: invoicePhoto,
       cashPhoto: selectedPayMethodAdmin === 'Efectivo' ? cashPhoto : ''
@@ -401,6 +408,30 @@ export default function App() {
     setInvoicePhoto('');
     setCashPhoto('');
     setSelectedPayMethodAdmin('');
+  };
+
+  // GUARDAR MONTO DEFINITIVO DE LA FACTURA
+  const handleSaveFinalAmount = async () => {
+    const parsedAmount = parseFloat(exactFinalAmount);
+    if (isNaN(parsedAmount) || parsedAmount <= 0) {
+      alert("⚠️ Ingresa un monto definitivo válido.");
+      return;
+    }
+
+    try {
+      const orderRef = doc(db, 'orders', finalAmountOrderId);
+      await updateDoc(orderRef, {
+        total: parsedAmount,
+        hasExactAmount: true
+      });
+      setFinalAmountModalOpen(false);
+      setFinalAmountOrderId(null);
+      setExactFinalAmount('');
+      alert("✅ ¡Monto definitivo guardado con éxito!");
+    } catch (err) {
+      console.error(err);
+      alert("Error al guardar el monto.");
+    }
   };
 
   const handleSaveFailReason = async () => {
@@ -452,13 +483,13 @@ export default function App() {
   };
 
   const paidOrders = orders.filter(o => o.isPaid === true || o.status === 'Facturado' || o.status === 'Entregado');
-  const cashTotal = paidOrders.filter(o => o.paymentMethod === 'Efectivo').reduce((sum, o) => sum + Number(o.total), 0);
+  const cashTotal = paidOrders.filter(o => o.paymentMethod === 'Efectivo').reduce((sum, o) => sum + Number(o.total || o.approxTotal || 0), 0);
   const captureOrders = paidOrders.filter(o => o.paymentMethod?.includes('Digital') || o.paymentMethod?.includes('Capture'));
-  const captureSystemTotal = captureOrders.reduce((sum, o) => sum + Number(o.total), 0);
+  const captureSystemTotal = captureOrders.reduce((sum, o) => sum + Number(o.total || o.approxTotal || 0), 0);
   const manualCaptureParsed = parseFloat(manualCaptureSum) || 0;
   
   const returnOrders = orders.filter(o => o.status === 'No se pudo entregar');
-  const totalRefunded = returnOrders.filter(o => o.returnStatus === 'Devuelto').reduce((sum, o) => sum + Number(o.total), 0);
+  const totalRefunded = returnOrders.filter(o => o.returnStatus === 'Devuelto').reduce((sum, o) => sum + Number(o.total || o.approxTotal || 0), 0);
   const grandTotalDay = cashTotal + manualCaptureParsed - totalRefunded;
 
   const handleCloseDay = () => {
@@ -649,19 +680,19 @@ export default function App() {
                 </button>
 
                 <div className="flex justify-between font-black text-sm text-gray-800">
-                  <span>Total:</span>
+                  <span>Total aproximado por compra:</span>
                   <span className="text-[#0b6b38] text-base">S/ {cartTotal.toFixed(2)}</span>
                 </div>
                 
                 <button disabled={cart.length === 0} onClick={handleGenerateReceipt} className="w-full bg-[#0b6b38] text-white font-bold py-3 rounded-xl shadow">
-                  Generar Recibo y Confirmar
+                  Generar cálculo aproximado
                 </button>
               </div>
             </div>
           </div>
         )}
 
-        {/* SEGUIMIENTO DE PEDIDOS CON ESTADO DE PAGO (AMARILLO/VERDE) Y FACTURA VISIBLE */}
+        {/* SEGUIMIENTO DE PEDIDOS CON ESTADO DE PAGO Y MONTO REAL VS APROXIMADO */}
         {view === 'tracking' && (
           <div className="max-w-3xl mx-auto space-y-6">
             <div className="bg-white p-6 rounded-2xl shadow border">
@@ -689,7 +720,6 @@ export default function App() {
                             <p className="text-xs text-gray-500">Pago: <strong>{order.paymentPreference} ({order.paymentTiming})</strong></p>
                           </div>
                           
-                          {/* ESTADO DE PAGO DINÁMICO (AMARILLO SI NO HA PAGADO / VERDE SI YA PAGÓ) */}
                           <span className={`px-3 py-1 rounded-full font-black text-xs border ${
                             order.isPaid 
                               ? 'bg-green-100 text-green-800 border-green-300' 
@@ -714,7 +744,6 @@ export default function App() {
                           </div>
                         )}
 
-                        {/* FOTO DE LA FACTURA VISIBLE PARA EL CLIENTE */}
                         {order.invoicePhoto && (
                           <div className="bg-green-50 border border-green-200 p-3 rounded-xl text-xs flex justify-between items-center">
                             <p className="font-bold text-green-900 flex items-center gap-1.5">
@@ -730,8 +759,8 @@ export default function App() {
                           <p className="font-bold text-gray-700">Productos:</p>
                           <p className="text-gray-600">{order.items?.map(i => `${i.qty}x ${i.name}`).join(', ')}</p>
                           <div className="flex justify-between font-bold text-gray-800 border-t pt-2">
-                            <span>Total:</span>
-                            <span className="text-green-800">S/ {Number(order.total).toFixed(2)}</span>
+                            <span>{order.hasExactAmount ? 'Total a Pagar (Definitivo):' : 'Total Aproximado:'}</span>
+                            <span className="text-green-800 text-sm">S/ {Number(order.total || order.approxTotal).toFixed(2)}</span>
                           </div>
                         </div>
                       </div>
@@ -749,6 +778,7 @@ export default function App() {
               <div className="inline-block bg-[#0b6b38] px-4 py-1 rounded text-white font-black text-xl mb-1">PUNTO M</div>
               <p className="text-xs text-gray-500">Tel: {companyHeader.phone}</p>
               <p className="text-xs font-bold text-[#0b6b38] mt-2">Cliente: {user?.name} | Telf: {clientPhone}</p>
+              <p className="text-xs text-amber-700 font-medium mt-1">⚠️ Este es un cálculo aproximado. El monto definitivo se confirmará tras la facturación.</p>
             </div>
             <div className="space-y-2">
               <button onClick={() => setView('tracking')} className="w-full bg-[#0b6b38] text-white font-bold py-2.5 rounded-lg text-sm shadow">
@@ -761,7 +791,7 @@ export default function App() {
           </div>
         )}
 
-        {/* PANEL ADMIN CON BOTÓN DE FACTURAR ABAJO Y ESTADO AMARILLO/VERDE */}
+        {/* PANEL ADMIN CON BOTÓN DE INGRESAR MONTO DEFINITIVO */}
         {view === 'admin' && userRole === 'admin' && (
           <div className="space-y-6 max-w-5xl mx-auto">
             <div className="bg-white p-6 rounded-2xl shadow border">
@@ -787,7 +817,6 @@ export default function App() {
                             <span className="font-bold text-sm text-gray-800">{order.clientName}</span>
                             <span className="px-2 py-0.5 rounded-full font-black text-[10px] bg-gray-100 border text-gray-700">{order.status}</span>
                             
-                            {/* INDICADOR DE PAGO AMARILLO / VERDE EN ADMIN */}
                             <span className={`px-2 py-0.5 rounded-full font-black text-[10px] border ${
                               order.isPaid ? 'bg-green-100 text-green-800 border-green-300' : 'bg-amber-100 text-amber-800 border-amber-300'
                             }`}>
@@ -796,7 +825,9 @@ export default function App() {
                           </div>
                           <p className="text-gray-500">📞 {order.clientPhone} | Pago: {order.paymentPreference} ({order.paymentTiming})</p>
                           <p className="text-gray-600">Items: {order.items?.map(i => `${i.qty}x ${i.name}`).join(', ')}</p>
-                          <p className="font-bold text-green-800 text-xs">Total: S/ {Number(order.total).toFixed(2)}</p>
+                          <p className="font-bold text-green-800 text-xs">
+                            {order.hasExactAmount ? 'Total Definitivo:' : 'Total Aproximado:'} S/ {Number(order.total || order.approxTotal).toFixed(2)}
+                          </p>
                           
                           {order.invoicePhoto && (
                             <button onClick={() => setPreviewImage(order.invoicePhoto)} className="text-xs text-green-700 font-bold underline flex items-center gap-1 mt-1">
@@ -805,7 +836,6 @@ export default function App() {
                           )}
                         </div>
 
-                        {/* ACCIONES SUPERIORES (Imprimir, Alistado, En Camino, etc.) */}
                         <div className="flex flex-wrap items-center gap-2">
                           <button onClick={() => handlePrintOrder(order)} className="bg-gray-800 text-white p-2 rounded-lg text-xs font-bold flex items-center gap-1">
                             <Printer size={14} /> Imprimir
@@ -829,27 +859,43 @@ export default function App() {
                         </div>
                       </div>
 
-                      {/* ZONA INFERIOR: BOTÓN "FACTURAR" (UBICADO ABAJO) */}
+                      {/* ZONA INFERIOR: FACTURAR Y BOTÓN DE INGRESAR MONTO DEFINITIVO */}
                       <div className="bg-gray-50 p-3 rounded-xl border flex flex-col sm:flex-row justify-between items-center gap-3">
                         <div className="text-xs">
                           <p className="font-bold text-gray-700">Estado de Facturación y Pago:</p>
-                          <p className="text-gray-500">{order.isPaid ? 'Este pedido ya cuenta con su factura y pago registrado.' : 'El pedido está pendiente de facturación y cobro.'}</p>
+                          <p className="text-gray-500">{order.isPaid ? 'Factura cargada. Puedes actualizar el monto exacto si difiere del aproximado.' : 'Pendiente de facturar.'}</p>
                         </div>
 
-                        <button 
-                          onClick={() => {
-                            setInvoiceOrderId(order.id);
-                            setSelectedPayMethodAdmin(order.paymentPreference || 'Efectivo');
-                            setInvoiceModalOpen(true);
-                          }}
-                          className={`px-4 py-2 rounded-xl font-bold text-xs flex items-center gap-1.5 shadow transition ${
-                            order.isPaid 
-                              ? 'bg-blue-100 text-blue-800 hover:bg-blue-200 border border-blue-300' 
-                              : 'bg-blue-600 hover:bg-blue-700 text-white'
-                          }`}
-                        >
-                          <Receipt size={16} /> {order.isPaid ? '🔄 Actualizar Factura / Pago' : '📄 Facturar y Marcar Pagado'}
-                        </button>
+                        <div className="flex items-center gap-2">
+                          <button 
+                            onClick={() => {
+                              setInvoiceOrderId(order.id);
+                              setSelectedPayMethodAdmin(order.paymentPreference || 'Efectivo');
+                              setInvoiceModalOpen(true);
+                            }}
+                            className={`px-4 py-2 rounded-xl font-bold text-xs flex items-center gap-1.5 shadow transition ${
+                              order.isPaid 
+                                ? 'bg-blue-100 text-blue-800 hover:bg-blue-200 border border-blue-300' 
+                                : 'bg-blue-600 hover:bg-blue-700 text-white'
+                            }`}
+                          >
+                            <Receipt size={16} /> {order.isPaid ? '🔄 Actualizar Factura / Pago' : '📄 Facturar y Marcar Pagado'}
+                          </button>
+
+                          {/* BOTÓN NUEVO: INGRESAR MONTO DEFINITIVO */}
+                          {order.isPaid && (
+                            <button 
+                              onClick={() => {
+                                setFinalAmountOrderId(order.id);
+                                setExactFinalAmount(order.total || order.approxTotal || '');
+                                setFinalAmountModalOpen(true);
+                              }}
+                              className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-4 py-2 rounded-xl text-xs flex items-center gap-1.5 shadow"
+                            >
+                              <DollarSign size={16} /> Ingresar monto a pagar
+                            </button>
+                          )}
+                        </div>
                       </div>
 
                     </div>
@@ -930,7 +976,6 @@ export default function App() {
                 </div>
               )}
 
-              {/* CARGAR FOTO DE LA FACTURA */}
               <div className="space-y-1 bg-blue-50 p-2.5 rounded-xl border border-blue-200 text-xs">
                 <p className="font-bold text-blue-900 flex items-center gap-1"><Receipt size={14} /> Subir Foto de la Factura: *</p>
                 <label className="cursor-pointer bg-white border-2 border-dashed border-blue-400 text-gray-800 font-bold py-2 px-2 rounded-lg flex items-center justify-center gap-1">
@@ -947,13 +992,39 @@ export default function App() {
           </div>
         )}
 
+        {/* MODAL INGRESAR MONTO DEFINITIVO */}
+        {finalAmountModalOpen && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white p-6 rounded-2xl max-w-md w-full shadow-2xl space-y-4">
+              <h3 className="font-bold text-base text-emerald-700 flex items-center gap-2">
+                <DollarSign size={20} /> Ingresar Monto Definitivo a Pagar
+              </h3>
+              <p className="text-xs text-gray-600">Escribe el monto exacto de la factura para actualizar el total final que verá el cliente:</p>
+              
+              <input 
+                type="number"
+                step="0.01"
+                value={exactFinalAmount}
+                onChange={e => setExactFinalAmount(e.target.value)}
+                placeholder="Ej. 25.50"
+                className="w-full border p-2 rounded-lg text-sm font-bold"
+              />
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button onClick={() => { setFinalAmountModalOpen(false); setFinalAmountOrderId(null); }} className="bg-gray-200 text-gray-700 font-bold px-4 py-2 rounded-lg text-xs">Cancelar</button>
+                <button onClick={handleSaveFinalAmount} className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-4 py-2 rounded-lg text-xs shadow">Guardar Monto</button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {failModalOpen && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
             <div className="bg-white p-6 rounded-2xl max-w-md w-full shadow-2xl space-y-4">
               <h3 className="font-bold text-base text-red-600">Motivo de No Entrega</h3>
               <textarea rows="3" value={failReason} onChange={e => setFailReason(e.target.value)} placeholder="Escribe el motivo..." className="w-full border p-3 rounded-lg text-xs"></textarea>
               <div className="flex justify-end gap-2">
-                <button onClick={() => setFailModalOpen(false)} className="bg-gray-200 px-4 py-2 rounded-lg text-xs">Cancelar</button>
+                <button onClick={() => setFailModalOpen(false)} className="bg-gray-200 text-gray-700 font-bold px-4 py-2 rounded-lg text-xs">Cancelar</button>
                 <button onClick={handleSaveFailReason} className="bg-red-600 text-white px-4 py-2 rounded-lg text-xs font-bold">Guardar</button>
               </div>
             </div>
@@ -969,7 +1040,7 @@ export default function App() {
                 <input type="file" accept="image/*" onChange={handleReturnProofUpload} className="hidden" />
               </label>
               <div className="flex justify-end gap-2">
-                <button onClick={() => setReturnModalOpen(false)} className="bg-gray-200 px-4 py-2 rounded-lg text-xs">Cancelar</button>
+                <button onClick={() => setReturnModalOpen(false)} className="bg-gray-200 text-gray-700 font-bold px-4 py-2 rounded-lg text-xs">Cancelar</button>
                 <button onClick={handleSaveReturnProof} className="bg-green-600 text-white font-bold px-4 py-2 rounded-lg text-xs font-bold">Confirmar</button>
               </div>
             </div>
