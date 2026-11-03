@@ -28,7 +28,8 @@ import {
   Lock,
   RotateCcw,
   Truck,
-  PackageCheck
+  PackageCheck,
+  Camera
 } from 'lucide-react';
 import { auth, googleProvider, db, signInWithPopup, signOut } from './firebase';
 import { 
@@ -68,6 +69,8 @@ export default function App() {
   const [deliveryDate, setDeliveryDate] = useState('');
   const [deliveryTime, setDeliveryTime] = useState('');
   const [clientPhone, setClientPhone] = useState('');
+  const [paymentPreference, setPaymentPreference] = useState('Efectivo'); // 'Efectivo', 'Tarjeta', 'Pago Digital'
+  const [paymentTiming, setPaymentTiming] = useState('Contra Entrega'); // 'Instantáneo', 'Contra Entrega'
 
   // Modales
   const [failModalOpen, setFailModalOpen] = useState(false);
@@ -77,6 +80,8 @@ export default function App() {
   const [payModalOpen, setPayModalOpen] = useState(false);
   const [payOrderId, setPayOrderId] = useState(null);
   const [paymentProof, setPaymentProof] = useState('');
+  const [cashPhoto, setCashPhoto] = useState('');
+  const [selectedPayMethodAdmin, setSelectedPayMethodAdmin] = useState('');
 
   const [returnModalOpen, setReturnModalOpen] = useState(false);
   const [returnOrderId, setReturnOrderId] = useState(null);
@@ -188,13 +193,11 @@ export default function App() {
 
   const handleResetToFactorySettings = async () => {
     const confirmReset = window.confirm(
-      "⚠️ ¿Estás seguro de que deseas restaurar los valores de fábrica?\n\nEsta acción eliminará TODOS los pedidos registrados, capturas de pago y restablecerá el catálogo."
+      "⚠️ ¿Estás seguro de que deseas restaurar los valores de fábrica?\n\nEsta acción eliminará TODOS los pedidos registrados y restablecerá el catálogo."
     );
-
     if (!confirmReset) return;
 
     setIsResetting(true);
-
     try {
       const ordersSnapshot = await getDocs(collection(db, 'orders'));
       for (const orderDoc of ordersSnapshot.docs) {
@@ -207,10 +210,7 @@ export default function App() {
       }
 
       for (const baseProd of BASE_PRODUCTS) {
-        await addDoc(collection(db, 'products'), {
-          ...baseProd,
-          createdAt: new Date()
-        });
+        await addDoc(collection(db, 'products'), { ...baseProd, createdAt: new Date() });
       }
 
       setCart([]);
@@ -219,11 +219,10 @@ export default function App() {
       setDayClosed(false);
       setClosedDayData(null);
       setSelectedClientFilter('all');
-
-      alert("🔄 ¡Los valores de fábrica han sido restaurados con éxito!");
+      alert("🔄 ¡Los valores de fábrica han sido restaurados!");
     } catch (error) {
       console.error("Error restaurando valores:", error);
-      alert("Hubo un problema al intentar reiniciar la base de datos.");
+      alert("Error al reiniciar la base de datos.");
     } finally {
       setIsResetting(false);
     }
@@ -276,11 +275,11 @@ export default function App() {
       return;
     }
     if (!clientPhone.trim()) {
-      alert("⚠️ Por favor ingrese su número de teléfono de contacto para la entrega.");
+      alert("⚠️ Por favor ingrese su número de teléfono de contacto.");
       return;
     }
     if (!deliveryDate || !deliveryTime) {
-      alert("⚠️ Por favor seleccione la fecha y hora preferida de entrega.");
+      alert("⚠️ Por favor seleccione fecha y hora de entrega.");
       return;
     }
 
@@ -293,21 +292,9 @@ export default function App() {
 
     const [hours, minutes] = deliveryTime.split(':').map(Number);
     const totalMinutes = hours * 60 + minutes;
-    const openMinutes = 10 * 60; 
-    const closeMinutes = 19 * 60; 
-
-    if (totalMinutes < openMinutes || totalMinutes > closeMinutes) {
-      alert("⚠️ El horario de atención de la tienda es de 10:00 AM a 7:00 PM. Por favor selecciona una hora dentro de este rango.");
+    if (totalMinutes < 10 * 60 || totalMinutes > 19 * 60) {
+      alert("⚠️ El horario de atención de la tienda es de 10:00 AM a 7:00 PM.");
       return;
-    }
-
-    if (deliveryDate === todayStr) {
-      const now = new Date();
-      const currentMinutes = now.getHours() * 60 + now.getMinutes();
-      if (totalMinutes < currentMinutes) {
-        alert("⚠️ No puedes seleccionar una hora que ya ha pasado el día de hoy.");
-        return;
-      }
     }
 
     if (cart.length === 0) return;
@@ -322,9 +309,12 @@ export default function App() {
       location: clientLocation || null,
       deliveryDate: deliveryDate,
       deliveryTime: deliveryTime,
+      paymentPreference: paymentPreference,
+      paymentTiming: paymentTiming,
       status: 'Pendiente',
       paymentMethod: '',
       paymentProof: '',
+      cashPhoto: '',
       failReason: '',
       returnStatus: 'No aplica',
       returnProof: '',
@@ -344,9 +334,7 @@ export default function App() {
     const file = e.target.files[0];
     if (file) {
       const reader = new FileReader();
-      reader.onloadend = () => {
-        setNewProduct(prev => ({ ...prev, image: reader.result }));
-      };
+      reader.onloadend = () => setNewProduct(prev => ({ ...prev, image: reader.result }));
       reader.readAsDataURL(file);
     }
   };
@@ -355,9 +343,16 @@ export default function App() {
     const file = e.target.files[0];
     if (file) {
       const reader = new FileReader();
-      reader.onloadend = () => {
-        setPaymentProof(reader.result);
-      };
+      reader.onloadend = () => setPaymentProof(reader.result);
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleCashPhotoUpload = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => setCashPhoto(reader.result);
       reader.readAsDataURL(file);
     }
   };
@@ -366,16 +361,14 @@ export default function App() {
     const file = e.target.files[0];
     if (file) {
       const reader = new FileReader();
-      reader.onloadend = () => {
-        setReturnProof(reader.result);
-      };
+      reader.onloadend = () => setReturnProof(reader.result);
       reader.readAsDataURL(file);
     }
   };
 
   const handleClientAiOrder = async () => {
     if (!user) {
-      alert("⚠️ Debes iniciar sesión con Google para usar el Asistente.");
+      alert("⚠️ Debes iniciar sesión para usar el Asistente.");
       handleLogin();
       return;
     }
@@ -413,7 +406,6 @@ export default function App() {
 
       if (foundAny) feedbackMessages.push("✅ ¡Productos disponibles agregados al carrito!");
       if (notFoundItems.length > 0) feedbackMessages.push(`⚠️ No tenemos en existencia: ${notFoundItems.join(', ')}.`);
-      if (!foundAny && notFoundItems.length === 0) feedbackMessages.push("No se pudieron identificar productos.");
 
       setAiOrderFeedback(feedbackMessages.join(' '));
       setClientPrompt('');
@@ -483,21 +475,29 @@ export default function App() {
     }
   };
 
-  const handlePayCash = async () => {
-    await handleUpdateOrderStatus(payOrderId, 'Pagado', { paymentMethod: 'Efectivo', paymentProof: '' });
-    setPayModalOpen(false);
-    setPayOrderId(null);
-  };
-
-  const handlePayCapture = async () => {
-    if (!paymentProof) {
-      alert("Selecciona el capture de pago.");
+  // CONFIRMAR PAGO DESDE MODAL ADMIN (EFECTIVO CON FOTO, TARJETA O PAGO DIGITAL)
+  const handleConfirmAdminPayment = async () => {
+    if (!selectedPayMethodAdmin) {
+      alert("Por favor selecciona la opción de pago.");
       return;
     }
-    await handleUpdateOrderStatus(payOrderId, 'Pagado', { paymentMethod: 'Transferencia / Capture', paymentProof: paymentProof });
+
+    if (selectedPayMethodAdmin === 'Efectivo' && !cashPhoto) {
+      alert("⚠️ Por favor captura o sube la foto del billete / efectivo recibido.");
+      return;
+    }
+
+    await handleUpdateOrderStatus(payOrderId, 'Pagado', {
+      paymentMethod: selectedPayMethodAdmin,
+      paymentProof: paymentProof || '',
+      cashPhoto: selectedPayMethodAdmin === 'Efectivo' ? cashPhoto : ''
+    });
+
     setPayModalOpen(false);
     setPayOrderId(null);
     setPaymentProof('');
+    setCashPhoto('');
+    setSelectedPayMethodAdmin('');
   };
 
   const handleSaveFailReason = async () => {
@@ -543,7 +543,8 @@ export default function App() {
         <body style="font-family: Arial; padding: 20px; font-size: 12px;">
           <h2>PUNTO M - RUC 20123456789</h2>
           <p><strong>Cliente:</strong> ${orderToPrint.clientName} (${orderToPrint.clientPhone || 'Sin teléfono'})</p>
-          <p><strong>Horario de Entrega:</strong> ${orderToPrint.deliveryDate} a las ${orderToPrint.deliveryTime}</p>
+          <p><strong>Método de Pago:</strong> ${orderToPrint.paymentPreference} (${orderToPrint.paymentTiming})</p>
+          <p><strong>Horario Entrega:</strong> ${orderToPrint.deliveryDate} a las ${orderToPrint.deliveryTime}</p>
           <p><strong>Estado:</strong> ${orderToPrint.status}</p>
           <table><tbody>${itemsHtml}</tbody></table>
           <h3>Total: S/ ${Number(orderToPrint.total).toFixed(2)}</h3>
@@ -556,15 +557,12 @@ export default function App() {
 
   const paidOrders = orders.filter(o => o.status === 'Pagado' || o.status === 'Alistado' || o.status === 'En Camino' || o.status === 'Entregado');
   const cashTotal = paidOrders.filter(o => o.paymentMethod === 'Efectivo').reduce((sum, o) => sum + Number(o.total), 0);
-  const captureOrders = paidOrders.filter(o => o.paymentMethod === 'Transferencia / Capture');
+  const captureOrders = paidOrders.filter(o => o.paymentMethod === 'Transferencia / Yape / Pago Digital' || o.paymentMethod === 'Transferencia / Capture');
   const captureSystemTotal = captureOrders.reduce((sum, o) => sum + Number(o.total), 0);
   const manualCaptureParsed = parseFloat(manualCaptureSum) || 0;
   
   const returnOrders = orders.filter(o => o.status === 'No se pudo entregar');
-  const totalRefunded = returnOrders
-    .filter(o => o.returnStatus === 'Devuelto')
-    .reduce((sum, o) => sum + Number(o.total), 0);
-
+  const totalRefunded = returnOrders.filter(o => o.returnStatus === 'Devuelto').reduce((sum, o) => sum + Number(o.total), 0);
   const grandTotalDay = cashTotal + manualCaptureParsed - totalRefunded;
 
   const handleCloseDay = () => {
@@ -577,12 +575,11 @@ export default function App() {
       totalRefunded,
       grandTotal: grandTotalDay
     });
-    alert("🔒 ¡Día cerrado con éxito! Los datos han sido consolidados.");
+    alert("🔒 ¡Día cerrado con éxito!");
   };
 
   const uniqueClients = Array.from(new Set(orders.map(o => o.clientEmail || o.clientName))).filter(Boolean);
   const filteredOrders = selectedClientFilter === 'all' ? orders : orders.filter(o => (o.clientEmail === selectedClientFilter || o.clientName === selectedClientFilter));
-  
   const myOrders = user ? orders.filter(o => o.clientUid === user.uid || o.clientEmail === user.email) : [];
 
   return (
@@ -659,6 +656,7 @@ export default function App() {
       </header>
 
       <main className="max-w-6xl mx-auto w-full px-4 py-6 flex-1">
+        {/* CATÁLOGO Y CARRITO */}
         {view === 'catalog' && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div className="lg:col-span-2 space-y-6">
@@ -733,7 +731,7 @@ export default function App() {
               {cart.length === 0 ? (
                 <div className="py-12 text-center text-gray-400 text-sm">El carrito está vacío.</div>
               ) : (
-                <div className="space-y-3 flex-1 overflow-y-auto max-h-[220px] pr-1">
+                <div className="space-y-3 flex-1 overflow-y-auto max-h-[200px] pr-1">
                   {cart.map(item => (
                     <div key={item.id} className="flex justify-between items-center p-2 rounded-lg bg-gray-50 border">
                       <div className="text-xs">
@@ -754,7 +752,7 @@ export default function App() {
               <div className="mt-4 pt-3 border-t space-y-3">
                 <div>
                   <label className="text-[11px] font-bold text-gray-700 flex items-center gap-1 mb-1">
-                    <Phone size={12} className="text-[#0b6b38]" /> Teléfono de contacto (Entrega): *
+                    <Phone size={12} className="text-[#0b6b38]" /> Teléfono de contacto: *
                   </label>
                   <input 
                     type="tel"
@@ -765,26 +763,43 @@ export default function App() {
                   />
                 </div>
 
+                {/* SELECTORES DE MÉTODO Y MODALIDAD DE PAGO */}
+                <div className="bg-blue-50 p-2.5 rounded-lg border border-blue-200 text-xs space-y-2">
+                  <p className="font-bold text-blue-900 flex items-center gap-1">
+                    <CreditCard size={14} className="text-blue-700" /> Método y Modalidad de Pago:
+                  </p>
+
+                  <div className="space-y-1.5">
+                    <label className="block text-[10px] font-bold text-gray-600">Forma de Pago:</label>
+                    <select 
+                      value={paymentPreference}
+                      onChange={e => setPaymentPreference(e.target.value)}
+                      className="w-full border p-1.5 rounded text-xs bg-white font-medium"
+                    >
+                      <option value="Efectivo">💵 Efectivo</option>
+                      <option value="Tarjeta">💳 Tarjeta (P.O.S. al entregar)</option>
+                      <option value="Pago Digital">📱 Pago Digital (Yape / Transferencia)</option>
+                    </select>
+
+                    <label className="block text-[10px] font-bold text-gray-600 mt-1">¿Cuándo deseas pagar?:</label>
+                    <select 
+                      value={paymentTiming}
+                      onChange={e => setPaymentTiming(e.target.value)}
+                      className="w-full border p-1.5 rounded text-xs bg-white font-medium"
+                    >
+                      <option value="Contra Entrega">🚚 Pago Contra Entrega</option>
+                      <option value="Instantáneo">⚡ Pago Instantáneo previo</option>
+                    </select>
+                  </div>
+                </div>
+
                 <div className="bg-gray-50 p-2.5 rounded-lg border text-xs space-y-2">
                   <p className="font-bold text-gray-700 flex items-center gap-1">
-                    <Calendar size={14} className="text-[#0b6b38]" /> Entrega (Horario: 10:00 AM - 7:00 PM): *
+                    <Calendar size={14} className="text-[#0b6b38]" /> Horario de Entrega (10 AM - 7 PM): *
                   </p>
                   <div className="grid grid-cols-2 gap-2">
-                    <input 
-                      type="date" 
-                      min={todayStr}
-                      value={deliveryDate} 
-                      onChange={e => setDeliveryDate(e.target.value)} 
-                      className="border p-1 rounded text-xs bg-white" 
-                    />
-                    <input 
-                      type="time" 
-                      min="10:00" 
-                      max="19:00"
-                      value={deliveryTime} 
-                      onChange={e => setDeliveryTime(e.target.value)} 
-                      className="border p-1 rounded text-xs bg-white" 
-                    />
+                    <input type="date" min={todayStr} value={deliveryDate} onChange={e => setDeliveryDate(e.target.value)} className="border p-1 rounded text-xs bg-white" />
+                    <input type="time" min="10:00" max="19:00" value={deliveryTime} onChange={e => setDeliveryTime(e.target.value)} className="border p-1 rounded text-xs bg-white" />
                   </div>
                 </div>
 
@@ -815,24 +830,18 @@ export default function App() {
           </div>
         )}
 
-        {/* VISTA 2: SEGUIMIENTO DE PEDIDOS PARA EL CLIENTE (CON CAPTURES VISIBLES) */}
+        {/* SEGUIMIENTO DE PEDIDOS */}
         {view === 'tracking' && (
           <div className="max-w-3xl mx-auto space-y-6">
             <div className="bg-white p-6 rounded-2xl shadow border">
               <h2 className="font-bold text-xl text-gray-800 mb-2 flex items-center gap-2 border-b pb-3">
                 <Truck className="text-[#0b6b38]" /> Seguimiento de Mis Pedidos
               </h2>
-              <p className="text-xs text-gray-500 mb-6">
-                Consulta el estado, los comprobantes de pago aprobados y las devoluciones en tiempo real.
-              </p>
 
               {myOrders.length === 0 ? (
                 <div className="text-center py-12 bg-gray-50 rounded-xl border">
                   <ShoppingBag size={36} className="mx-auto text-gray-300 mb-2" />
                   <p className="text-sm font-bold text-gray-600">No tienes pedidos activos actualmente.</p>
-                  <button onClick={() => setView('catalog')} className="mt-3 bg-[#0b6b38] text-white px-4 py-2 rounded-lg text-xs font-bold">
-                    Ir al Catálogo a Comprar
-                  </button>
                 </div>
               ) : (
                 <div className="space-y-6">
@@ -849,7 +858,7 @@ export default function App() {
                         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 border-b pb-3">
                           <div>
                             <p className="font-bold text-sm text-gray-800">Pedido #{order.id.slice(-6).toUpperCase()}</p>
-                            <p className="text-xs text-gray-500">Entrega programada: <strong>{order.deliveryDate}</strong> a las <strong>{order.deliveryTime}</strong></p>
+                            <p className="text-xs text-gray-500">Forma elegida: <strong>{order.paymentPreference} ({order.paymentTiming})</strong></p>
                           </div>
                           <span className={`px-3 py-1 rounded-full font-black text-xs ${
                             order.status === 'Pendiente' ? 'bg-amber-100 text-amber-800 border border-amber-300' :
@@ -863,7 +872,6 @@ export default function App() {
                           </span>
                         </div>
 
-                        {/* LÍNEA DE TIEMPO */}
                         {!isFailed ? (
                           <div className="py-2">
                             <div className="flex justify-between items-center text-[10px] font-bold text-gray-500 mb-2">
@@ -890,44 +898,27 @@ export default function App() {
                           <div className="bg-red-50 border border-red-200 p-3 rounded-xl text-xs text-red-800 space-y-1">
                             <p className="font-bold">⚠️ El pedido no pudo ser entregado o fue cancelado.</p>
                             {order.failReason && <p>Motivo: {order.failReason}</p>}
-                            {order.returnStatus && <p className="font-bold">Estado de reembolso: {order.returnStatus}</p>}
-                            
-                            {/* BOTÓN PARA QUE EL CLIENTE VEA EL CAPTURE DE LA DEVOLUCIÓN */}
                             {order.returnProof && (
-                              <button 
-                                onClick={() => setPreviewImage(order.returnProof)}
-                                className="mt-2 text-xs bg-red-600 text-white hover:bg-red-700 px-3 py-1.5 rounded-lg font-bold flex items-center gap-1.5 shadow"
-                              >
-                                <Eye size={14} /> Ver Comprobante de Reembolso / Devolución
+                              <button onClick={() => setPreviewImage(order.returnProof)} className="mt-2 text-xs bg-red-600 text-white px-3 py-1.5 rounded-lg font-bold flex items-center gap-1">
+                                <Eye size={14} /> Ver Comprobante de Reembolso
                               </button>
                             )}
                           </div>
                         )}
 
-                        {/* MÉTODO DE PAGO Y BOTÓN DE CAPTURE PARA EL CLIENTE */}
-                        {order.paymentMethod && (
-                          <div className="bg-blue-50 border border-blue-200 p-3 rounded-xl text-xs flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
-                            <div>
-                              <p className="font-bold text-blue-900">💳 Método de Pago: {order.paymentMethod}</p>
-                              {order.paymentProof ? (
-                                <p className="text-blue-700 text-[11px]">El comprobante de pago fue verificado y cargado por el sistema.</p>
-                              ) : (
-                                <p className="text-blue-700 text-[11px]">Registrado como pago en efectivo.</p>
-                              )}
-                            </div>
-
-                            {order.paymentProof && (
-                              <button 
-                                onClick={() => setPreviewImage(order.paymentProof)}
-                                className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-3 py-1.5 rounded-lg text-xs flex items-center gap-1 shadow"
-                              >
-                                <Eye size={14} /> Ver Capture de Pago Aprobado
-                              </button>
-                            )}
+                        {/* VISUALIZACIÓN DE COMPROBANTES DE PAGO O FOTO DE EFECTIVO */}
+                        {(order.paymentProof || order.cashPhoto) && (
+                          <div className="bg-blue-50 border border-blue-200 p-3 rounded-xl text-xs flex justify-between items-center">
+                            <p className="font-bold text-blue-900">💳 Pago Confirmado por Repartidor ({order.paymentMethod})</p>
+                            <button 
+                              onClick={() => setPreviewImage(order.paymentProof || order.cashPhoto)}
+                              className="bg-blue-600 text-white font-bold px-3 py-1.5 rounded-lg text-xs flex items-center gap-1"
+                            >
+                              <Eye size={14} /> Ver Comprobante / Foto
+                            </button>
                           </div>
                         )}
 
-                        {/* DETALLES DE ITEMS */}
                         <div className="bg-gray-50 p-3 rounded-xl text-xs space-y-1">
                           <p className="font-bold text-gray-700">Productos comprados:</p>
                           <p className="text-gray-600">{order.items ? order.items.map(i => `${i.qty}x ${i.name}`).join(', ') : 'Sin detalle'}</p>
@@ -946,7 +937,7 @@ export default function App() {
           </div>
         )}
 
-        {/* VISTA 3: RECIBO */}
+        {/* RECIBO */}
         {view === 'receipt' && (
           <div className="max-w-md mx-auto bg-white p-8 rounded-xl shadow-2xl border border-gray-200">
             <div className="text-center border-b pb-4 mb-4">
@@ -956,7 +947,7 @@ export default function App() {
               <p className="text-xs font-mono text-gray-600">{companyHeader.rif}</p>
               <p className="text-xs text-gray-500">Tel: {companyHeader.phone}</p>
               <p className="text-xs font-bold text-[#0b6b38] mt-2">Cliente: {user?.name} | Telf: {clientPhone}</p>
-              <p className="text-xs text-gray-600 mt-1">Horario Atención Tienda: 10:00 AM - 7:00 PM</p>
+              <p className="text-xs text-gray-600 mt-1">Pago: <strong>{paymentPreference} ({paymentTiming})</strong></p>
             </div>
 
             <table className="w-full text-xs mb-4">
@@ -989,30 +980,28 @@ export default function App() {
                   `🛒 *NUEVO PEDIDO - PUNTO M*\n` +
                   `👤 *Cliente:* ${user ? user.name : 'Cliente'}\n` +
                   `📞 *Teléfono:* ${clientPhone}\n` +
-                  `📅 *Entrega:* ${deliveryDate} a las ${deliveryTime} (Horario tienda 10am-7pm)\n` +
+                  `💳 *Método de Pago:* ${paymentPreference} (${paymentTiming})\n` +
+                  `📅 *Entrega:* ${deliveryDate} a las ${deliveryTime}\n` +
                   `-----------------------------------\n` +
                   `📋 *Detalle:*\n` + cart.map(i => `• ${i.qty}x ${i.name} - S/ ${(i.price * i.qty).toFixed(2)}`).join('\n') + `\n` +
                   `-----------------------------------\n` +
-                  `💰 *Total:* S/ {cartTotal.toFixed(2)}\n` +
+                  `💰 *Total:* S/ ${cartTotal.toFixed(2)}\n` +
                   (clientLocation ? `📍 *Ubicación:*\n${clientLocation.mapUrl}` : '')
                 )}`}
                 target="_blank"
                 rel="noreferrer"
-                className="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-lg text-center flex items-center justify-center gap-2 text-sm shadow transition"
+                className="w-full bg-green-600 text-white font-bold py-3 rounded-lg text-center flex items-center justify-center gap-2 text-sm shadow"
               >
                 <Phone size={18} /> Enviar Pedido por WhatsApp (+58 424-5719928)
               </a>
               <button onClick={() => setView('tracking')} className="w-full bg-[#0b6b38] text-white font-bold py-2.5 rounded-lg text-sm shadow">
                 Ver Seguimiento de mi Pedido
               </button>
-              <button onClick={() => setView('catalog')} className="w-full bg-gray-200 text-gray-700 font-bold py-2 rounded-lg text-sm">
-                Volver al Catálogo
-              </button>
             </div>
           </div>
         )}
 
-        {/* VISTA 4: PANEL ADMIN */}
+        {/* PANEL ADMIN CON GESTIÓN DE PAGOS Y FOTO DE EFECTIVO */}
         {view === 'admin' && userRole === 'admin' && (
           <div className="space-y-6 max-w-5xl mx-auto">
             <div className="bg-white p-6 rounded-2xl shadow border">
@@ -1025,192 +1014,110 @@ export default function App() {
                   <button 
                     onClick={handleResetToFactorySettings}
                     disabled={isResetting}
-                    className="bg-amber-600 hover:bg-amber-700 disabled:bg-gray-400 text-white font-bold px-3 py-2 rounded-xl text-xs flex items-center gap-1 shadow transition"
+                    className="bg-amber-600 text-white font-bold px-3 py-2 rounded-xl text-xs flex items-center gap-1 shadow"
                   >
-                    <RotateCcw size={14} /> {isResetting ? 'Restaurando...' : 'Restaurar Valores de Fábrica'}
+                    <RotateCcw size={14} /> Restaurar Fábrica
                   </button>
 
                   <div className="flex bg-gray-100 p-1 rounded-xl text-xs font-bold gap-1">
-                    <button 
-                      onClick={() => setAdminSubTab('orders')}
-                      className={`px-3 py-2 rounded-lg transition ${adminSubTab === 'orders' ? 'bg-[#0b6b38] text-white shadow' : 'text-gray-600 hover:bg-gray-200'}`}
-                    >
-                      📦 Pedidos
-                    </button>
-                    <button 
-                      onClick={() => setAdminSubTab('accounting')}
-                      className={`px-3 py-2 rounded-lg transition ${adminSubTab === 'accounting' ? 'bg-[#0b6b38] text-white shadow' : 'text-gray-600 hover:bg-gray-200'}`}
-                    >
-                      📊 Contabilidad
-                    </button>
-                    <button 
-                      onClick={() => setAdminSubTab('returns')}
-                      className={`px-3 py-2 rounded-lg transition ${adminSubTab === 'returns' ? 'bg-[#0b6b38] text-white shadow' : 'text-gray-600 hover:bg-gray-200'}`}
-                    >
-                      🔄 Devoluciones ({orders.filter(o => o.status === 'No se pudo entregar').length})
-                    </button>
+                    <button onClick={() => setAdminSubTab('orders')} className={`px-3 py-2 rounded-lg ${adminSubTab === 'orders' ? 'bg-[#0b6b38] text-white shadow' : 'text-gray-600'}`}>📦 Pedidos</button>
+                    <button onClick={() => setAdminSubTab('accounting')} className={`px-3 py-2 rounded-lg ${adminSubTab === 'accounting' ? 'bg-[#0b6b38] text-white shadow' : 'text-gray-600'}`}>📊 Contabilidad</button>
+                    <button onClick={() => setAdminSubTab('returns')} className={`px-3 py-2 rounded-lg ${adminSubTab === 'returns' ? 'bg-[#0b6b38] text-white shadow' : 'text-gray-600'}`}>🔄 Devoluciones</button>
                   </div>
                 </div>
               </div>
 
               {adminSubTab === 'orders' && (
                 <div className="mb-8 space-y-4">
-                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                  <div className="flex justify-between items-center">
                     <h3 className="font-bold text-base text-gray-800 flex items-center gap-2">
                       <History size={18} className="text-[#0b6b38]" /> Historial e Ítems por Cliente
                     </h3>
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-bold text-gray-600">Filtrar Cliente:</span>
-                      <select 
-                        value={selectedClientFilter} 
-                        onChange={e => setSelectedClientFilter(e.target.value)}
-                        className="border p-1.5 rounded text-xs bg-gray-50 focus:ring-2 focus:ring-[#0b6b38]"
-                      >
-                        <option value="all">Todos ({orders.length})</option>
-                        {uniqueClients.map(c => <option key={c} value={c}>{c}</option>)}
-                      </select>
-                    </div>
                   </div>
 
-                  {filteredOrders.length === 0 ? (
-                    <p className="text-xs text-gray-400 bg-gray-50 p-4 rounded-lg text-center">No hay pedidos registrados.</p>
-                  ) : (
-                    <div className="space-y-4 max-h-[450px] overflow-y-auto pr-1">
-                      {filteredOrders.map(order => (
-                        <div key={order.id} className="border p-4 rounded-xl bg-white shadow-sm flex flex-col md:flex-row justify-between gap-4 items-start md:items-center hover:border-green-300 transition">
-                          <div className="space-y-1 text-xs flex-1">
-                            <div className="flex items-center gap-2">
-                              <span className="font-bold text-sm text-gray-800">{order.clientName}</span>
-                              <span className={`px-2 py-0.5 rounded-full font-black text-[10px] ${
-                                order.status === 'Pendiente' ? 'bg-amber-100 text-amber-800 border border-amber-300' :
-                                order.status === 'Pagado' ? 'bg-blue-100 text-blue-800 border border-blue-300' :
-                                order.status === 'Alistado' ? 'bg-purple-100 text-purple-800 border border-purple-300' :
-                                order.status === 'En Camino' ? 'bg-indigo-100 text-indigo-800 border border-indigo-300' :
-                                order.status === 'Completado' || order.status === 'Entregado' ? 'bg-green-100 text-green-800 border border-green-300' : 
-                                'bg-red-100 text-red-800 border border-red-300'
-                              }`}>{order.status}</span>
-                            </div>
-                            <p className="text-gray-500">📞 Telf: {order.clientPhone || 'No registrado'} | Email: {order.clientEmail || 'N/A'}</p>
-                            <p className="text-gray-700 font-bold flex items-center gap-1">
-                              <Calendar size={12} className="text-[#0b6b38]" /> Entrega: {order.deliveryDate} a las {order.deliveryTime}
-                            </p>
-                            <p className="text-gray-600 font-medium">Items: {order.items ? order.items.map(i => `${i.qty}x ${i.name}`).join(', ') : 'Sin detalle'}</p>
-                            <p className="font-bold text-green-800 text-xs">Total aprox: S/ {Number(order.total).toFixed(2)}</p>
-                            
-                            {order.paymentMethod && <p className="text-blue-700 font-semibold text-[11px]">💳 Pago: {order.paymentMethod}</p>}
-                            {order.paymentProof && (
-                              <button onClick={() => setPreviewImage(order.paymentProof)} className="text-xs text-indigo-600 hover:underline font-bold flex items-center gap-1 mt-1">
-                                <Eye size={14} /> Ver Capture de Pago
-                              </button>
-                            )}
-                            {order.failReason && <p className="text-red-600 font-bold bg-red-50 p-1.5 rounded border border-red-200 mt-1">⚠️ No entrega: {order.failReason}</p>}
-                          </div>
-
-                          <div className="flex flex-wrap items-center gap-2">
-                            <button onClick={() => handlePrintOrder(order)} className="bg-gray-800 hover:bg-black text-white p-2 rounded-lg text-xs flex items-center gap-1 font-bold">
-                              <Printer size={14} /> Imprimir
-                            </button>
-                            
-                            {order.status === 'Pendiente' && (
-                              <button onClick={() => { setPayOrderId(order.id); setPayModalOpen(true); }} className="bg-blue-600 hover:bg-blue-700 text-white p-2 rounded-lg text-xs font-bold flex items-center gap-1">
-                                <CreditCard size={14} /> Marcar Pagado
-                              </button>
-                            )}
-
-                            {(order.status === 'Pagado' || order.status === 'Pendiente') && (
-                              <button 
-                                onClick={() => handleUpdateOrderStatus(order.id, 'Alistado')}
-                                className="bg-purple-600 hover:bg-purple-700 text-white p-2 rounded-lg text-xs font-bold flex items-center gap-1"
-                              >
-                                <PackageCheck size={14} /> Alistado
-                              </button>
-                            )}
-
-                            {(order.status === 'Pagado' || order.status === 'Alistado') && (
-                              <button 
-                                onClick={() => handleUpdateOrderStatus(order.id, 'En Camino')}
-                                className="bg-indigo-600 hover:bg-indigo-700 text-white p-2 rounded-lg text-xs font-bold flex items-center gap-1"
-                              >
-                                <Truck size={14} /> En Camino
-                              </button>
-                            )}
-
-                            {(order.status === 'Pagado' || order.status === 'Alistado' || order.status === 'En Camino') && (
-                              <>
-                                <button onClick={() => handleUpdateOrderStatus(order.id, 'Entregado')} className="bg-green-600 hover:bg-green-700 text-white p-2 rounded-lg text-xs font-bold flex items-center gap-1">
-                                  <CheckCircle size={14} /> Entregado
-                                </button>
-                                <button onClick={() => { setFailOrderId(order.id); setFailModalOpen(true); }} className="bg-amber-600 hover:bg-amber-700 text-white p-2 rounded-lg text-xs font-bold flex items-center gap-1">
-                                  <AlertTriangle size={14} /> No se pudo entregar
-                                </button>
-                              </>
-                            )}
-
-                            {order.status !== 'Entregado' && order.status !== 'Cancelado' && order.status !== 'No se pudo entregar' && (
-                              <button onClick={() => handleUpdateOrderStatus(order.id, 'Cancelado')} className="bg-red-500 hover:bg-red-600 text-white p-2 rounded-lg text-xs font-bold flex items-center gap-1">
-                                <XCircle size={14} /> Cancelar
-                              </button>
-                            )}
-                          </div>
+                  {filteredOrders.map(order => (
+                    <div key={order.id} className="border p-4 rounded-xl bg-white shadow-sm flex flex-col md:flex-row justify-between gap-4 items-start md:items-center">
+                      <div className="space-y-1 text-xs flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-sm text-gray-800">{order.clientName}</span>
+                          <span className="px-2 py-0.5 rounded-full font-black text-[10px] bg-amber-100 text-amber-800">{order.status}</span>
                         </div>
-                      ))}
+                        <p className="text-gray-500">📞 Telf: {order.clientPhone || 'N/A'} | Email: {order.clientEmail || 'N/A'}</p>
+                        <p className="text-blue-700 font-bold">💳 Preferencia cliente: {order.paymentPreference || 'Efectivo'} ({order.paymentTiming || 'Contra Entrega'})</p>
+                        <p className="text-gray-700 font-bold">📅 Entrega: {order.deliveryDate} a las {order.deliveryTime}</p>
+                        <p className="text-gray-600 font-medium">Items: {order.items ? order.items.map(i => `${i.qty}x ${i.name}`).join(', ') : ''}</p>
+                        <p className="font-bold text-green-800 text-xs">Total: S/ {Number(order.total).toFixed(2)}</p>
+                        
+                        {order.cashPhoto && (
+                          <button onClick={() => setPreviewImage(order.cashPhoto)} className="text-xs text-green-700 font-bold flex items-center gap-1 mt-1 underline">
+                            <Eye size={14} /> Ver Foto de Efectivo Recibido
+                          </button>
+                        )}
+                        {order.paymentProof && (
+                          <button onClick={() => setPreviewImage(order.paymentProof)} className="text-xs text-indigo-600 font-bold flex items-center gap-1 mt-1 underline">
+                            <Eye size={14} /> Ver Capture Digital
+                          </button>
+                        )}
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button onClick={() => handlePrintOrder(order)} className="bg-gray-800 text-white p-2 rounded-lg text-xs font-bold flex items-center gap-1">
+                          <Printer size={14} /> Imprimir
+                        </button>
+
+                        {/* BOTÓN REGISTRAR PAGO (ABRE MODAL CON BOTONES Y FOTO DE EFECTIVO) */}
+                        {order.status === 'Pendiente' && (
+                          <button 
+                            onClick={() => {
+                              setPayOrderId(order.id);
+                              setSelectedPayMethodAdmin(order.paymentPreference || 'Efectivo');
+                              setPayModalOpen(true);
+                            }}
+                            className="bg-blue-600 text-white p-2 rounded-lg text-xs font-bold flex items-center gap-1"
+                          >
+                            <CreditCard size={14} /> Marcar Pagado / Registrar Cobro
+                          </button>
+                        )}
+
+                        {(order.status === 'Pagado' || order.status === 'Pendiente') && (
+                          <button onClick={() => handleUpdateOrderStatus(order.id, 'Alistado')} className="bg-purple-600 text-white p-2 rounded-lg text-xs font-bold flex items-center gap-1">
+                            <PackageCheck size={14} /> Alistado
+                          </button>
+                        )}
+
+                        {(order.status === 'Pagado' || order.status === 'Alistado') && (
+                          <button onClick={() => handleUpdateOrderStatus(order.id, 'En Camino')} className="bg-indigo-600 text-white p-2 rounded-lg text-xs font-bold flex items-center gap-1">
+                            <Truck size={14} /> En Camino
+                          </button>
+                        )}
+
+                        {(order.status === 'Pagado' || order.status === 'Alistado' || order.status === 'En Camino') && (
+                          <>
+                            <button onClick={() => handleUpdateOrderStatus(order.id, 'Entregado')} className="bg-green-600 text-white p-2 rounded-lg text-xs font-bold flex items-center gap-1">
+                              <CheckCircle size={14} /> Entregado
+                            </button>
+                            <button onClick={() => { setFailOrderId(order.id); setFailModalOpen(true); }} className="bg-amber-600 text-white p-2 rounded-lg text-xs font-bold flex items-center gap-1">
+                              <AlertTriangle size={14} /> No entregado
+                            </button>
+                          </>
+                        )}
+                      </div>
                     </div>
-                  )}
+                  ))}
                 </div>
               )}
 
+              {/* PESTAÑA CONTABILIDAD */}
               {adminSubTab === 'accounting' && (
                 <div className="space-y-6">
-                  <div className="bg-green-50 border border-green-200 p-5 rounded-2xl flex flex-col md:flex-row justify-between items-center gap-4">
+                  <div className="bg-green-50 border border-green-200 p-5 rounded-2xl flex justify-between items-center">
                     <div>
-                      <h3 className="font-black text-lg text-green-900 flex items-center gap-2">
-                        <PieChart size={22} className="text-[#0b6b38]" /> Resumen Contable Diario
-                      </h3>
-                      <p className="text-xs text-green-800 mt-1">Cálculo de ingresos en efectivo, captures y deducción de devoluciones.</p>
+                      <h3 className="font-black text-lg text-green-900">Resumen Contable Diario</h3>
+                      <p className="text-xs text-green-800">Control de cobros por Efectivo (con foto), Tarjetas y Pagos Digitales.</p>
                     </div>
-
-                    <button 
-                      onClick={handleCloseDay}
-                      disabled={dayClosed}
-                      className="bg-red-600 hover:bg-red-700 disabled:bg-gray-400 text-white font-black px-5 py-3 rounded-xl text-xs flex items-center gap-2 shadow transition"
-                    >
+                    <button onClick={handleCloseDay} disabled={dayClosed} className="bg-red-600 text-white font-black px-5 py-3 rounded-xl text-xs flex items-center gap-2">
                       <Lock size={16} /> {dayClosed ? 'Día Cerrado' : 'Cerrar Día'}
                     </button>
-                  </div>
-
-                  {dayClosed && closedDayData && (
-                    <div className="bg-amber-50 border border-amber-300 p-4 rounded-xl text-xs text-amber-900 space-y-1">
-                      <p className="font-bold text-sm">🔒 Cierre de Día Realizado ({closedDayData.date})</p>
-                      <p>• Clientes atendidos: {closedDayData.totalClients}</p>
-                      <p>• Total Efectivo: S/ {closedDayData.cashTotal.toFixed(2)}</p>
-                      <p>• Total Captures: S/ {closedDayData.captureTotal.toFixed(2)}</p>
-                      <p>• Total Restado por Devoluciones: - S/ {closedDayData.totalRefunded.toFixed(2)}</p>
-                      <p className="font-black text-base text-green-800 mt-2">Gran Total Final del Día: S/ {closedDayData.grandTotal.toFixed(2)}</p>
-                    </div>
-                  )}
-
-                  <div className="border rounded-xl p-4 bg-gray-50 space-y-3">
-                    <h4 className="font-bold text-sm text-gray-800">Compras y Pagos Organizados por Clientes</h4>
-                    {paidOrders.length === 0 ? (
-                      <p className="text-xs text-gray-400">No hay pagos registrados hoy.</p>
-                    ) : (
-                      <div className="space-y-2 max-h-[250px] overflow-y-auto">
-                        {uniqueClients.map(client => {
-                          const clientOrders = paidOrders.filter(o => o.clientEmail === client || o.clientName === client);
-                          if (clientOrders.length === 0) return null;
-                          const clientTotal = clientOrders.reduce((sum, o) => sum + Number(o.total), 0);
-                          return (
-                            <div key={client} className="bg-white p-3 rounded-lg border text-xs flex justify-between items-center">
-                              <div>
-                                <p className="font-bold text-gray-800">{clientOrders[0].clientName} ({client})</p>
-                                <p className="text-gray-500">{clientOrders.length} pedido(s) pagados | Métodos: {clientOrders.map(o => o.paymentMethod).join(', ')}</p>
-                              </div>
-                              <span className="font-black text-green-800 text-sm">S/ {clientTotal.toFixed(2)}</span>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1220,18 +1127,15 @@ export default function App() {
                     </div>
 
                     <div className="border p-4 rounded-xl bg-white space-y-2 text-xs">
-                      <p className="font-bold text-gray-700">📥 Sumatoria Manual de Captures de Pago:</p>
-                      <div className="flex gap-2">
-                        <input 
-                          type="number" 
-                          step="0.01"
-                          value={manualCaptureSum}
-                          onChange={e => setManualCaptureSum(e.target.value)}
-                          placeholder="Ingrese monto total de captures..."
-                          className="border p-2 rounded flex-1 text-xs bg-gray-50"
-                        />
-                      </div>
-                      <p className="text-[11px] text-gray-500">Sistema automático por capture: S/ {captureSystemTotal.toFixed(2)}</p>
+                      <p className="font-bold text-gray-700">📥 Sumatoria Manual / Digital de Captures:</p>
+                      <input 
+                        type="number" 
+                        step="0.01"
+                        value={manualCaptureSum}
+                        onChange={e => setManualCaptureSum(e.target.value)}
+                        placeholder="Monto captures..."
+                        className="border p-2 rounded w-full text-xs bg-gray-50"
+                      />
                     </div>
                   </div>
 
@@ -1239,122 +1143,122 @@ export default function App() {
                     <div>
                       <p className="text-xs uppercase tracking-widest text-green-200 font-bold">Sumatoria Total Final del Día</p>
                       <p className="text-3xl font-black mt-1">S/ {grandTotalDay.toFixed(2)}</p>
-                      {totalRefunded > 0 && <p className="text-xs text-amber-200 mt-1">(Incluye -S/ {totalRefunded.toFixed(2)} restados por devoluciones)</p>}
                     </div>
                     <DollarSign size={40} className="text-[#fbc02d]" />
                   </div>
                 </div>
               )}
 
+              {/* PESTAÑA DEVOLUCIONES */}
               {adminSubTab === 'returns' && (
                 <div className="space-y-4">
-                  <h3 className="font-bold text-base text-gray-800 flex items-center gap-2">
-                    <RefreshCw size={18} className="text-red-600" /> Pedidos No Entregados y Gestión de Devoluciones
-                  </h3>
-
-                  {returnOrders.length === 0 ? (
-                    <p className="text-xs text-gray-400 bg-gray-50 p-4 rounded-lg text-center">No hay devoluciones registradas.</p>
-                  ) : (
-                    <div className="space-y-3 max-h-[450px] overflow-y-auto">
-                      {returnOrders.map(order => (
-                        <div key={order.id} className="border border-red-200 p-4 rounded-xl bg-red-50 shadow-sm flex flex-col md:flex-row justify-between gap-4 items-start md:items-center">
-                          <div className="space-y-1 text-xs flex-1">
-                            <div className="flex items-center gap-2">
-                              <span className="font-bold text-sm text-gray-800">{order.clientName}</span>
-                              <span className={`px-2 py-0.5 rounded-full font-black text-[10px] ${order.returnStatus === 'Devuelto' ? 'bg-green-100 text-green-800' : 'bg-amber-100 text-amber-800'}`}>
-                                {order.returnStatus || 'Pendiente Devolución'}
-                              </span>
-                            </div>
-                            <p className="text-red-700 font-bold">⚠️ Motivo: {order.failReason}</p>
-                            <p className="text-gray-600">Monto a devolver: <strong>S/ {Number(order.total).toFixed(2)}</strong></p>
-                            
-                            {order.returnProof && (
-                              <button onClick={() => setPreviewImage(order.returnProof)} className="text-xs text-indigo-600 hover:underline font-bold flex items-center gap-1 mt-1">
-                                <Eye size={14} /> Ver Capture del Reembolso Enviado
-                              </button>
-                            )}
-                          </div>
-
-                          <div>
-                            {order.returnStatus !== 'Devuelto' ? (
-                              <button 
-                                onClick={() => { setReturnOrderId(order.id); setReturnModalOpen(true); }}
-                                className="bg-red-600 hover:bg-red-700 text-white font-bold px-4 py-2 rounded-lg text-xs shadow flex items-center gap-1"
-                              >
-                                <CreditCard size={14} /> Marcar como Devuelto y Subir Capture
-                              </button>
-                            ) : (
-                              <span className="text-xs font-bold text-green-700 bg-green-100 px-3 py-1.5 rounded-lg border border-green-300">
-                                ✅ Dinero Devuelto (Restado del día)
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      ))}
+                  <h3 className="font-bold text-base text-gray-800">Devoluciones</h3>
+                  {returnOrders.map(order => (
+                    <div key={order.id} className="border border-red-200 p-4 rounded-xl bg-red-50 flex justify-between items-center text-xs">
+                      <div>
+                        <p className="font-bold text-gray-800">{order.clientName}</p>
+                        <p className="text-red-700 font-bold">⚠️ Motivo: {order.failReason}</p>
+                        <p>Monto: S/ {Number(order.total).toFixed(2)}</p>
+                      </div>
+                      <button onClick={() => { setReturnOrderId(order.id); setReturnModalOpen(true); }} className="bg-red-600 text-white font-bold px-3 py-2 rounded-lg">
+                        Subir Capture Devolución
+                      </button>
                     </div>
-                  )}
+                  ))}
                 </div>
               )}
 
-              <div className="bg-green-50 p-5 rounded-xl border border-green-200 mt-8 mb-6">
-                <h3 className="font-bold text-sm text-green-900 mb-2 flex items-center gap-2">
-                  <Sparkles size={18} className="text-[#0b6b38]" /> Importador Inteligente Gemini IA
-                </h3>
-                <textarea 
-                  rows="3"
-                  value={aiFileText}
-                  onChange={e => setAiFileText(e.target.value)}
-                  placeholder="Pega el texto de inventario..."
-                  className="w-full border p-2 rounded-lg text-xs mb-2 bg-white"
-                ></textarea>
-                <button onClick={handleProcessAiFileWithGemini} disabled={isProcessingFile} className="bg-[#0b6b38] text-white font-bold px-4 py-2 rounded-lg text-xs">
-                  {isProcessingFile ? 'Analizando...' : 'Analizar e Importar'}
-                </button>
-              </div>
-
-              <div className="border-t pt-4">
-                <h3 className="font-bold text-sm text-gray-700 mb-3">Agregar Producto Manual</h3>
-                <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 mb-3">
-                  <input type="text" placeholder="Nombre" value={newProduct.name} onChange={e => setNewProduct({...newProduct, name: e.target.value})} className="border p-2 rounded text-xs" />
-                  <input type="number" placeholder="Precio S/" value={newProduct.price} onChange={e => setNewProduct({...newProduct, price: e.target.value})} className="border p-2 rounded text-xs" />
-                  <input type="text" placeholder="URL Imagen" value={newProduct.image} onChange={e => setNewProduct({...newProduct, image: e.target.value})} className="border p-2 rounded text-xs" />
-                  <button onClick={async () => {
-                    if (!newProduct.name || !newProduct.price) return;
-                    await addDoc(collection(db, 'products'), {
-                      name: newProduct.name, price: parseFloat(newProduct.price), category: 'Viveres', image: newProduct.image || 'https://images.unsplash.com/photo-1542838132-92c53300491e?w=300', createdAt: new Date()
-                    });
-                    setNewProduct({ name: '', price: '', category: 'Viveres', image: '' });
-                    alert("Guardado.");
-                  }} className="bg-[#0b6b38] text-white font-bold p-2 rounded text-xs">Guardar</button>
-                </div>
-                <label className="cursor-pointer bg-gray-200 text-gray-800 text-xs font-bold py-1.5 px-3 rounded inline-flex items-center gap-1">
-                  <ImageIcon size={14} /> Subir imagen desde PC
-                  <input type="file" accept="image/*" onChange={handleImageFileUpload} className="hidden" />
-                </label>
-              </div>
-
             </div>
           </div>
         )}
 
+        {/* MODAL PAGO CONTRA ENTREGA CON FOTO DE EFECTIVO */}
         {payModalOpen && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
             <div className="bg-white p-6 rounded-2xl max-w-md w-full shadow-2xl space-y-4">
-              <h3 className="font-bold text-base text-blue-700 flex items-center gap-2"><CreditCard size={20} /> Registrar Pago</h3>
-              <button onClick={handlePayCash} className="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-xl text-xs shadow">💵 Pagó en Efectivo</button>
-              <div className="border-t pt-3 space-y-2">
-                <p className="text-xs font-bold text-gray-700">Subir Capture:</p>
-                <label className="cursor-pointer bg-gray-100 border-2 border-dashed border-gray-300 text-xs font-bold py-3 px-3 rounded-xl flex flex-col items-center justify-center">
-                  <Upload size={18} /> {paymentProof ? '✅ Capture seleccionado' : 'Seleccionar imagen'}
-                  <input type="file" accept="image/*" onChange={handlePaymentProofUpload} className="hidden" />
-                </label>
-                {paymentProof && <button onClick={handlePayCapture} className="w-full bg-blue-600 text-white font-bold py-3 rounded-xl text-xs shadow mt-2">📤 Guardar con Capture</button>}
+              <h3 className="font-bold text-base text-blue-700 flex items-center gap-2">
+                <CreditCard size={20} /> Confirmar Cobro al Entregar
+              </h3>
+              <p className="text-xs text-gray-600">
+                Selecciona la forma en que pagó realmente el cliente al momento de recibir el pedido:
+              </p>
+
+              {/* BOTONES DE SELECCIÓN DE MÉTODO */}
+              <div className="grid grid-cols-3 gap-2">
+                <button 
+                  type="button"
+                  onClick={() => setSelectedPayMethodAdmin('Efectivo')}
+                  className={`p-3 rounded-xl border font-bold text-xs flex flex-col items-center justify-center gap-1 transition ${selectedPayMethodAdmin === 'Efectivo' ? 'bg-green-600 text-white border-green-700 shadow' : 'bg-gray-50 text-gray-700 hover:bg-gray-100'}`}
+                >
+                  💵 Efectivo
+                </button>
+                <button 
+                  type="button"
+                  onClick={() => setSelectedPayMethodAdmin('Tarjeta')}
+                  className={`p-3 rounded-xl border font-bold text-xs flex flex-col items-center justify-center gap-1 transition ${selectedPayMethodAdmin === 'Tarjeta' ? 'bg-blue-600 text-white border-blue-700 shadow' : 'bg-gray-50 text-gray-700 hover:bg-gray-100'}`}
+                >
+                  💳 Tarjeta
+                </button>
+                <button 
+                  type="button"
+                  onClick={() => setSelectedPayMethodAdmin('Transferencia / Yape / Pago Digital')}
+                  className={`p-3 rounded-xl border font-bold text-xs flex flex-col items-center justify-center gap-1 transition ${selectedPayMethodAdmin === 'Transferencia / Yape / Pago Digital' ? 'bg-purple-600 text-white border-purple-700 shadow' : 'bg-gray-50 text-gray-700 hover:bg-gray-100'}`}
+                >
+                  📱 Digital / Yape
+                </button>
               </div>
-              <button onClick={() => { setPayModalOpen(false); setPaymentProof(''); }} className="w-full bg-gray-200 text-gray-700 font-bold py-2 rounded-lg text-xs">Cancelar</button>
+
+              {/* OPCIÓN: FOTO AL EFECTIVO SI SE ELIGE EFECTIVO */}
+              {selectedPayMethodAdmin === 'Efectivo' && (
+                <div className="border-t pt-3 space-y-2 bg-green-50 p-3 rounded-xl border border-green-200">
+                  <p className="text-xs font-bold text-green-900 flex items-center gap-1">
+                    <Camera size={16} /> Tomar Foto o Subir Captura del Efectivo Recibido: *
+                  </p>
+                  <label className="cursor-pointer bg-white border-2 border-dashed border-green-400 text-gray-800 text-xs font-bold py-3 px-3 rounded-xl flex flex-col items-center justify-center gap-1 transition">
+                    <Upload size={18} className="text-green-700" />
+                    <span>{cashPhoto ? '✅ Foto de efectivo cargada (Cambiar)' : '📷 Tomar foto / Subir imagen del dinero'}</span>
+                    <input type="file" accept="image/*" capture="environment" onChange={handleCashPhotoUpload} className="hidden" />
+                  </label>
+                </div>
+              )}
+
+              {/* OPCIÓN: CAPTURE SI SE ELIGE PAGO DIGITAL */}
+              {selectedPayMethodAdmin === 'Transferencia / Yape / Pago Digital' && (
+                <div className="border-t pt-3 space-y-2 bg-purple-50 p-3 rounded-xl border border-purple-200">
+                  <p className="text-xs font-bold text-purple-900">Subir Capture del Pago Digital / Yape:</p>
+                  <label className="cursor-pointer bg-white border-2 border-dashed border-purple-400 text-gray-800 text-xs font-bold py-3 px-3 rounded-xl flex flex-col items-center justify-center gap-1 transition">
+                    <Upload size={18} className="text-purple-700" />
+                    <span>{paymentProof ? '✅ Capture seleccionado (Cambiar)' : 'Subir imagen de Yape / Transferencia'}</span>
+                    <input type="file" accept="image/*" onChange={handlePaymentProofUpload} className="hidden" />
+                  </label>
+                </div>
+              )}
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button 
+                  onClick={() => {
+                    setPayModalOpen(false);
+                    setPayOrderId(null);
+                    setPaymentProof('');
+                    setCashPhoto('');
+                    setSelectedPayMethodAdmin('');
+                  }} 
+                  className="bg-gray-200 text-gray-700 font-bold px-4 py-2 rounded-lg text-xs"
+                >
+                  Cancelar
+                </button>
+                <button 
+                  onClick={handleConfirmAdminPayment}
+                  className="bg-green-600 hover:bg-green-700 text-white font-bold px-4 py-2 rounded-lg text-xs shadow"
+                >
+                  Guardar Pago
+                </button>
+              </div>
             </div>
           </div>
         )}
 
+        {/* MODAL FALLO */}
         {failModalOpen && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
             <div className="bg-white p-6 rounded-2xl max-w-md w-full shadow-2xl space-y-4">
@@ -1368,13 +1272,14 @@ export default function App() {
           </div>
         )}
 
+        {/* MODAL DEVOLUCIÓN */}
         {returnModalOpen && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
             <div className="bg-white p-6 rounded-2xl max-w-md w-full shadow-2xl space-y-4">
               <h3 className="font-bold text-base text-green-700 flex items-center gap-2"><RefreshCw size={20} /> Devolución de Dinero</h3>
-              <p className="text-xs text-gray-600">Sube el capture del reembolso enviado al cliente para restarlo automáticamente del día:</p>
+              <p className="text-xs text-gray-600">Sube el capture del reembolso enviado al cliente:</p>
               <label className="cursor-pointer bg-gray-100 border-2 border-dashed border-gray-300 text-xs font-bold py-3 px-3 rounded-xl flex flex-col items-center justify-center">
-                <Upload size={18} /> {returnProof ? '✅ Capture de devolución listo' : 'Subir capture de transferencia de devolución'}
+                <Upload size={18} /> {returnProof ? '✅ Capture listo' : 'Subir capture de devolución'}
                 <input type="file" accept="image/*" onChange={handleReturnProofUpload} className="hidden" />
               </label>
               <div className="flex justify-end gap-2">
@@ -1385,6 +1290,7 @@ export default function App() {
           </div>
         )}
 
+        {/* PREVIEW IMAGEN */}
         {previewImage && (
           <div className="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-50 p-4" onClick={() => setPreviewImage(null)}>
             <div className="bg-white p-4 rounded-2xl max-w-lg w-full shadow-2xl relative space-y-3">
