@@ -15,7 +15,10 @@ import {
   Printer,
   CheckCircle,
   XCircle,
-  Clock
+  Clock,
+  CreditCard,
+  History,
+  Image as ImageIcon
 } from 'lucide-react';
 import { auth, googleProvider, db, signInWithPopup, signOut } from './firebase';
 import { 
@@ -45,6 +48,7 @@ export default function App() {
 
   const [cart, setCart] = useState([]);
   const [orders, setOrders] = useState([]);
+  const [selectedClientFilter, setSelectedClientFilter] = useState('all');
   
   const [companyHeader] = useState({
     name: 'PUNTO M',
@@ -60,15 +64,14 @@ export default function App() {
   const [isProcessingFile, setIsProcessingFile] = useState(false);
   const [aiStatusMessage, setAiStatusMessage] = useState('');
 
-  // Estados para el Asistente de Pedidos por IA de los clientes
+  // Estados Asistente IA Clientes
   const [clientPrompt, setClientPrompt] = useState('');
   const [isAiOrdering, setIsAiOrdering] = useState(false);
   const [aiOrderFeedback, setAiOrderFeedback] = useState('');
 
-  // Ubicación del cliente
+  // Ubicación GPS
   const [clientLocation, setClientLocation] = useState(null);
   const [locationLoading, setLocationLoading] = useState(false);
-  const [currentOrder, setCurrentOrder] = useState(null);
 
   useEffect(() => {
     // Escuchar productos en Firestore
@@ -84,13 +87,12 @@ export default function App() {
       console.log("Modo offline o usando catálogo base:", error);
     });
 
-    // Escuchar pedidos en Firestore para el panel Admin
+    // Escuchar pedidos en Firestore (con datos históricos)
     const unsubscribeOrders = onSnapshot(collection(db, 'orders'), (snapshot) => {
       const dbOrders = snapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
       }));
-      // Ordenar por fecha descendente
       dbOrders.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
       setOrders(dbOrders);
     }, (error) => {
@@ -198,13 +200,20 @@ export default function App() {
     );
   };
 
-  // Crear pedido en Firestore y preparar recibo
+  // Crear pedido con Validación de Sesión Obligatoria
   const handleGenerateReceipt = async () => {
+    if (!user) {
+      alert("⚠️ Debe iniciar sesión obligatoriamente antes de realizar un pedido.");
+      handleLogin();
+      return;
+    }
+
     if (cart.length === 0) return;
 
     const newOrderData = {
-      clientName: user ? user.name : 'Cliente Anónimo',
-      clientEmail: user ? user.email : 'No registrado',
+      clientUid: user.uid,
+      clientName: user.name,
+      clientEmail: user.email,
       items: cart,
       total: cartTotal,
       location: clientLocation || null,
@@ -213,38 +222,34 @@ export default function App() {
     };
 
     try {
-      const docRef = await addDoc(collection(db, 'orders'), newOrderData);
-      setCurrentOrder({ id: docRef.id, ...newOrderData });
+      await addDoc(collection(db, 'orders'), newOrderData);
       setView('receipt');
     } catch (err) {
       console.error("Error creando el pedido:", err);
-      // Permitir continuar a la vista de recibo incluso si Firestore falla
-      setCurrentOrder({ id: 'LOCAL-' + Date.now(), ...newOrderData });
       setView('receipt');
     }
   };
 
-  // Generar mensaje formateado para WhatsApp
-  const buildWhatsAppMessage = () => {
-    const orderItems = cart.map(item => `• ${item.qty}x ${item.name} - S/ ${(item.price * item.qty).toFixed(2)}`).join('\n');
-    const locationText = clientLocation 
-      ? `\n📍 *Ubicación del Cliente:*\n${clientLocation.mapUrl}` 
-      : '\n📍 *Ubicación:* No compartida';
-
-    const message = `🛒 *NUEVO PEDIDO - PUNTO M*\n` +
-      `👤 *Cliente:* ${user ? user.name : 'Cliente'}\n` +
-      `-----------------------------------\n` +
-      `📋 *Detalle del Pedido:*\n${orderItems}\n` +
-      `-----------------------------------\n` +
-      `💰 *Total aproximado a pagar:* S/ ${cartTotal.toFixed(2)}\n` +
-      `${locationText}\n\n` +
-      `¡Hola! Confirmo mi pedido para ser procesado.`;
-
-    return encodeURIComponent(message);
+  // Carga de imagen desde el computador (Base64)
+  const handleImageFileUpload = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setNewProduct(prev => ({ ...prev, image: reader.result }));
+      };
+      reader.readAsDataURL(file);
+    }
   };
 
-  // Asistente de IA para Pedidos
+  // Asistente IA para Clientes con Validación de Sesión
   const handleClientAiOrder = async () => {
+    if (!user) {
+      alert("⚠️ Debes iniciar sesión con Google para usar el Asistente de Pedidos.");
+      handleLogin();
+      return;
+    }
+
     if (!clientPrompt.trim()) return;
 
     setIsAiOrdering(true);
@@ -287,7 +292,7 @@ export default function App() {
       }
 
       if (!foundAny && notFoundItems.length === 0) {
-        feedbackMessages.push("No se pudieron identificar productos en tu mensaje. Intenta escribir el nombre exacto.");
+        feedbackMessages.push("No se pudieron identificar productos en tu mensaje.");
       }
 
       setAiOrderFeedback(feedbackMessages.join(' '));
@@ -301,7 +306,7 @@ export default function App() {
     }
   };
 
-  // Procesar archivo con Gemini IA para inventario
+  // Importar con Gemini IA
   const handleProcessAiFileWithGemini = async () => {
     if (!aiFileText.trim()) {
       alert("Por favor pega el texto de la factura o inventario primero.");
@@ -367,7 +372,7 @@ export default function App() {
     }
   };
 
-  // Cambiar estado de un pedido en Firestore (Admin)
+  // Cambiar estado de un pedido (Pendiente -> Pagado -> Completado/Entregado)
   const handleUpdateOrderStatus = async (orderId, newStatus) => {
     try {
       const orderRef = doc(db, 'orders', orderId);
@@ -377,16 +382,16 @@ export default function App() {
     }
   };
 
-  // Imprimir un pedido específico (Admin)
+  // Imprimir Pedido desde Admin
   const handlePrintOrder = (orderToPrint) => {
     const printWindow = window.open('', '_blank');
-    const itemsHtml = orderToPrint.items.map(item => 
+    const itemsHtml = orderToPrint.items ? orderToPrint.items.map(item => 
       `<tr>
         <td style="padding: 4px; border-bottom: 1px solid #ddd;">${item.qty}x</td>
         <td style="padding: 4px; border-bottom: 1px solid #ddd;">${item.name}</td>
         <td style="padding: 4px; border-bottom: 1px solid #ddd; text-align: right;">S/ ${(item.price * item.qty).toFixed(2)}</td>
       </tr>`
-    ).join('');
+    ).join('') : '';
 
     const locationHtml = orderToPrint.location 
       ? `<p><strong>Ubicación GPS:</strong> <a href="${orderToPrint.location.mapUrl}">${orderToPrint.location.mapUrl}</a></p>`
@@ -410,7 +415,8 @@ export default function App() {
             <p>Tel: +58 424 5719928</p>
           </div>
           <p><strong>Cliente:</strong> ${orderToPrint.clientName}</p>
-          <p><strong>Estado:</strong> ${orderToPrint.status}</p>
+          <p><strong>Email:</strong> ${orderToPrint.clientEmail || 'N/A'}</p>
+          <p><strong>Estado Actual:</strong> ${orderToPrint.status}</p>
           ${locationHtml}
           <table>
             <thead>
@@ -435,6 +441,13 @@ export default function App() {
     `);
     printWindow.document.close();
   };
+
+  // Obtener lista única de clientes para el filtro del historial
+  const uniqueClients = Array.from(new Set(orders.map(o => o.clientEmail || o.clientName))).filter(Boolean);
+
+  const filteredOrders = selectedClientFilter === 'all' 
+    ? orders 
+    : orders.filter(o => (o.clientEmail === selectedClientFilter || o.clientName === selectedClientFilter));
 
   return (
     <div className="min-h-screen flex flex-col bg-gray-100 text-gray-800">
@@ -499,13 +512,13 @@ export default function App() {
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div className="lg:col-span-2 space-y-6">
               
-              {/* ASISTENTE DE PEDIDOS POR IA PARA CLIENTES */}
+              {/* ASISTENTE DE PEDIDOS POR IA */}
               <div className="bg-white p-4 rounded-xl shadow-sm border border-green-200">
                 <h3 className="font-bold text-sm text-green-900 mb-1 flex items-center gap-2">
                   <Sparkles size={16} className="text-[#0b6b38]" /> Asistente de Pedidos IA
                 </h3>
                 <p className="text-xs text-gray-600 mb-2">
-                  Escribe lo que necesitas (ej: "Quiero 2 kilos de arroz y un jabón") y la IA agregará lo disponible al carrito y te avisará si algo no existe.
+                  Escribe lo que necesitas (ej: "Quiero 2 kilos de arroz y un jabón") y la IA agregará lo disponible al carrito.
                 </p>
                 <div className="flex gap-2">
                   <input 
@@ -513,7 +526,7 @@ export default function App() {
                     value={clientPrompt}
                     onChange={e => setClientPrompt(e.target.value)}
                     onKeyDown={e => e.key === 'Enter' && handleClientAiOrder()}
-                    placeholder="Escribe tu pedido aquí..."
+                    placeholder={user ? "Escribe tu pedido aquí..." : "Inicia sesión para pedir con la IA..."}
                     className="flex-1 border p-2 rounded-lg text-xs focus:ring-2 focus:ring-[#0b6b38]"
                   />
                   <button 
@@ -592,7 +605,6 @@ export default function App() {
                 </div>
               )}
 
-              {/* OPCIÓN PARA OBTENER UBICACIÓN GPS */}
               <div className="mt-4 pt-3 border-t">
                 <div className="mb-3">
                   <button 
@@ -631,7 +643,7 @@ export default function App() {
           </div>
         )}
 
-        {/* VISTA DEL RECIBO */}
+        {/* RECIBO */}
         {view === 'receipt' && (
           <div className="max-w-md mx-auto bg-white p-8 rounded-xl shadow-2xl border border-gray-200">
             <div className="text-center border-b pb-4 mb-4">
@@ -641,6 +653,7 @@ export default function App() {
               <p className="text-xs font-mono text-gray-600">{companyHeader.rif}</p>
               <p className="text-xs text-gray-500">{companyHeader.address}</p>
               <p className="text-xs text-gray-500">Tel: {companyHeader.phone}</p>
+              <p className="text-xs font-bold text-[#0b6b38] mt-2">Cliente: {user?.name}</p>
             </div>
 
             <table className="w-full text-xs mb-4">
@@ -676,7 +689,15 @@ export default function App() {
 
             <div className="space-y-2">
               <a 
-                href={`https://wa.me/584245719928?text=${buildWhatsAppMessage()}`}
+                href={`https://wa.me/584245719928?text=${encodeURIComponent(
+                  `🛒 *NUEVO PEDIDO - PUNTO M*\n` +
+                  `👤 *Cliente:* ${user ? user.name : 'Cliente'}\n` +
+                  `-----------------------------------\n` +
+                  `📋 *Detalle del Pedido:*\n` + cart.map(item => `• ${item.qty}x ${item.name} - S/ ${(item.price * item.qty).toFixed(2)}`).join('\n') + `\n` +
+                  `-----------------------------------\n` +
+                  `💰 *Total aproximado a pagar:* S/ ${cartTotal.toFixed(2)}\n` +
+                  (clientLocation ? `📍 *Ubicación del Cliente:*\n${clientLocation.mapUrl}` : '📍 *Ubicación:* No compartida')
+                )}`}
                 target="_blank"
                 rel="noreferrer"
                 className="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-lg text-center flex items-center justify-center gap-2 text-sm shadow transition"
@@ -693,49 +714,69 @@ export default function App() {
           </div>
         )}
 
-        {/* PANEL DE ADMINISTRACIÓN CON PEDIDOS PENDIENTES */}
+        {/* PANEL ADMIN AVANZADO */}
         {view === 'admin' && userRole === 'admin' && (
-          <div className="space-y-6 max-w-4xl mx-auto">
+          <div className="space-y-6 max-w-5xl mx-auto">
             <div className="bg-white p-6 rounded-2xl shadow border">
-              <h2 className="font-bold text-xl text-gray-800 mb-4 flex items-center gap-2 border-b pb-3">
+              <h2 className="font-bold text-xl text-gray-800 mb-6 flex items-center gap-2 border-b pb-3">
                 <Settings className="text-[#0b6b38]" /> Panel de Administración PUNTO M
               </h2>
 
-              {/* SECCIÓN DE PEDIDOS PENDIENTES */}
+              {/* HISTORIAL Y GESTIÓN DE PEDIDOS POR CLIENTE */}
               <div className="mb-8">
-                <h3 className="font-bold text-base text-gray-800 mb-3 flex items-center gap-2">
-                  <Clock size={18} className="text-amber-600" /> Gestión de Pedidos Pendientes ({orders.filter(o => o.status === 'Pendiente').length})
-                </h3>
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-3">
+                  <h3 className="font-bold text-base text-gray-800 flex items-center gap-2">
+                    <History size={18} className="text-[#0b6b38]" /> Historial de Pedidos y Gestión
+                  </h3>
+                  
+                  {/* FILTRO POR CLIENTE */}
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold text-gray-600">Filtrar por Cliente:</span>
+                    <select 
+                      value={selectedClientFilter} 
+                      onChange={e => setSelectedClientFilter(e.target.value)}
+                      className="border p-1.5 rounded text-xs bg-gray-50 focus:ring-2 focus:ring-[#0b6b38]"
+                    >
+                      <option value="all">Todos los Clientes ({orders.length})</option>
+                      {uniqueClients.map(client => (
+                        <option key={client} value={client}>{client}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
 
-                {orders.length === 0 ? (
-                  <p className="text-xs text-gray-400 bg-gray-50 p-4 rounded-lg text-center">No hay pedidos registrados en la base de datos.</p>
+                {filteredOrders.length === 0 ? (
+                  <p className="text-xs text-gray-400 bg-gray-50 p-4 rounded-lg text-center">No hay pedidos registrados con el filtro seleccionado.</p>
                 ) : (
-                  <div className="space-y-4 max-h-[400px] overflow-y-auto pr-1">
-                    {orders.map(order => (
-                      <div key={order.id} className="border p-4 rounded-xl bg-white shadow-sm flex flex-col md:flex-row justify-between gap-4 items-start md:items-center">
+                  <div className="space-y-4 max-h-[450px] overflow-y-auto pr-1">
+                    {filteredOrders.map(order => (
+                      <div key={order.id} className="border p-4 rounded-xl bg-white shadow-sm flex flex-col md:flex-row justify-between gap-4 items-start md:items-center hover:border-green-300 transition">
                         <div className="space-y-1 text-xs flex-1">
                           <div className="flex items-center gap-2">
                             <span className="font-bold text-sm text-gray-800">{order.clientName}</span>
                             <span className={`px-2 py-0.5 rounded-full font-black text-[10px] ${
-                              order.status === 'Pendiente' ? 'bg-amber-100 text-amber-800' :
-                              order.status === 'Completado' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                              order.status === 'Pendiente' ? 'bg-amber-100 text-amber-800 border border-amber-300' :
+                              order.status === 'Pagado' ? 'bg-blue-100 text-blue-800 border border-blue-300' :
+                              order.status === 'Completado' || order.status === 'Entregado' ? 'bg-green-100 text-green-800 border border-green-300' : 
+                              'bg-red-100 text-red-800 border border-red-300'
                             }`}>
                               {order.status}
                             </span>
                           </div>
-                          <p className="text-gray-500">Items: {order.items ? order.items.map(i => `${i.qty}x ${i.name}`).join(', ') : 'Sin detalle'}</p>
-                          <p className="font-bold text-green-800">Total aprox: S/ {Number(order.total).toFixed(2)}</p>
+                          <p className="text-gray-500">Email: {order.clientEmail || 'No disponible'}</p>
+                          <p className="text-gray-700 font-medium">Items: {order.items ? order.items.map(i => `${i.qty}x ${i.name}`).join(', ') : 'Sin detalle'}</p>
+                          <p className="font-bold text-green-800 text-xs">Total aprox: S/ {Number(order.total).toFixed(2)}</p>
                           {order.location && (
                             <p className="text-blue-600 flex items-center gap-1 text-[11px]">
                               <MapPin size={12} />
-                              <a href={order.location.mapUrl} target="_blank" rel="noreferrer" className="underline">
+                              <a href={order.location.mapUrl} target="_blank" rel="noreferrer" className="underline font-bold">
                                 Ver Ubicación GPS en Google Maps
                               </a>
                             </p>
                           )}
                         </div>
 
-                        <div className="flex items-center gap-2">
+                        <div className="flex flex-wrap items-center gap-2">
                           <button 
                             onClick={() => handlePrintOrder(order)}
                             className="bg-gray-800 hover:bg-black text-white p-2 rounded-lg text-xs flex items-center gap-1 font-bold"
@@ -744,23 +785,36 @@ export default function App() {
                             <Printer size={14} /> Imprimir
                           </button>
                           
+                          {/* BOTÓN: CAMBIAR A PAGADO */}
                           {order.status === 'Pendiente' && (
-                            <>
-                              <button 
-                                onClick={() => handleUpdateOrderStatus(order.id, 'Completado')}
-                                className="bg-green-600 hover:bg-green-700 text-white p-2 rounded-lg text-xs font-bold flex items-center gap-1"
-                                title="Marcar como Completado"
-                              >
-                                <CheckCircle size={14} /> Completar
-                              </button>
-                              <button 
-                                onClick={() => handleUpdateOrderStatus(order.id, 'Cancelado')}
-                                className="bg-red-500 hover:bg-red-600 text-white p-2 rounded-lg text-xs font-bold flex items-center gap-1"
-                                title="Cancelar Pedido"
-                              >
-                                <XCircle size={14} /> Cancelar
-                              </button>
-                            </>
+                            <button 
+                              onClick={() => handleUpdateOrderStatus(order.id, 'Pagado')}
+                              className="bg-blue-600 hover:bg-blue-700 text-white p-2 rounded-lg text-xs font-bold flex items-center gap-1"
+                              title="Marcar como Pagado"
+                            >
+                              <CreditCard size={14} /> Marcar Pagado
+                            </button>
+                          )}
+
+                          {/* BOTÓN: COMPLETAR / ENTREGADO (DISPONIBLE AL ESTAR PAGADO) */}
+                          {order.status === 'Pagado' && (
+                            <button 
+                              onClick={() => handleUpdateOrderStatus(order.id, 'Entregado')}
+                              className="bg-green-600 hover:bg-green-700 text-white p-2 rounded-lg text-xs font-bold flex items-center gap-1"
+                              title="Marcar como Entregado / Completado"
+                            >
+                              <CheckCircle size={14} /> Completar (Entregado)
+                            </button>
+                          )}
+
+                          {order.status !== 'Entregado' && order.status !== 'Cancelado' && (
+                            <button 
+                              onClick={() => handleUpdateOrderStatus(order.id, 'Cancelado')}
+                              className="bg-red-500 hover:bg-red-600 text-white p-2 rounded-lg text-xs font-bold flex items-center gap-1"
+                              title="Cancelar Pedido"
+                            >
+                              <XCircle size={14} /> Cancelar
+                            </button>
                           )}
                         </div>
                       </div>
@@ -769,13 +823,13 @@ export default function App() {
                 )}
               </div>
 
-              {/* IMPORTADOR DE PRODUCTOS GEMINI IA */}
+              {/* IMPORTADOR DE INVENTARIO GEMINI IA */}
               <div className="bg-green-50 p-5 rounded-xl border border-green-200 mb-6">
                 <h3 className="font-bold text-sm text-green-900 mb-2 flex items-center gap-2">
                   <Sparkles size={18} className="text-[#0b6b38]" /> Importador Inteligente Gemini IA
                 </h3>
                 <p className="text-xs text-green-800 mb-3">
-                  Pega aquí el texto de tu factura o inventario. La IA extraerá los productos y los guardará directamente en tu base de datos Firestore.
+                  Pega el texto de tu factura o inventario para guardarlo en la base de datos Firestore.
                 </p>
                 <textarea 
                   rows="4"
@@ -803,10 +857,10 @@ Azúcar Rubia 1kg - 3.80 S/"
                 )}
               </div>
 
-              {/* REGISTRO MANUAL DE PRODUCTOS */}
+              {/* REGISTRO MANUAL CON CARGA DESDE COMPUTADOR */}
               <div className="border-t pt-4">
                 <h3 className="font-bold text-sm text-gray-700 mb-3">Agregar Producto Manual</h3>
-                <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 mb-3">
                   <input 
                     type="text" 
                     placeholder="Nombre Producto"
@@ -823,7 +877,7 @@ Azúcar Rubia 1kg - 3.80 S/"
                   />
                   <input 
                     type="text" 
-                    placeholder="URL Imagen"
+                    placeholder="URL Imagen (Web)"
                     value={newProduct.image}
                     onChange={e => setNewProduct({...newProduct, image: e.target.value})}
                     className="border p-2 rounded text-xs"
@@ -845,6 +899,18 @@ Azúcar Rubia 1kg - 3.80 S/"
                   >
                     Guardar Manual
                   </button>
+                </div>
+
+                {/* BOTÓN PARA CARGAR DESDE LA COMPUTADORA */}
+                <div className="flex items-center gap-2">
+                  <label className="cursor-pointer bg-gray-200 hover:bg-gray-300 text-gray-800 text-xs font-bold py-1.5 px-3 rounded inline-flex items-center gap-1 transition">
+                    <ImageIcon size={14} />
+                    <span>Subir imagen desde mi PC</span>
+                    <input type="file" accept="image/*" onChange={handleImageFileUpload} className="hidden" />
+                  </label>
+                  {newProduct.image && newProduct.image.startsWith('data:image') && (
+                    <span className="text-[11px] text-green-700 font-bold">✅ Imagen cargada desde PC</span>
+                  )}
                 </div>
               </div>
 
