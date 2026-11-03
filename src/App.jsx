@@ -33,7 +33,10 @@ import {
   Receipt,
   ArrowLeft,
   ShieldAlert,
-  Unlock
+  Unlock,
+  Users,
+  Award,
+  AlertCircle
 } from 'lucide-react';
 import { auth, googleProvider, db, signInWithPopup, signOut } from './firebase';
 import { 
@@ -60,12 +63,14 @@ const BASE_PRODUCTS = [
 export default function App() {
   const [user, setUser] = useState(null);
   const [userRole, setUserRole] = useState('client'); 
+  const [isVipClient, setIsVipClient] = useState(false);
   const [view, setView] = useState('catalog'); 
   const [adminSubTab, setAdminSubTab] = useState('orders');
   
   const [products, setProducts] = useState(BASE_PRODUCTS.map((p, i) => ({ id: String(i + 1), ...p })));
   const [cart, setCart] = useState([]);
   const [orders, setOrders] = useState([]);
+  const [usersList, setUsersList] = useState([]);
   const [selectedClientFilter, setSelectedClientFilter] = useState('all');
   
   const [deliveryDate, setDeliveryDate] = useState('');
@@ -73,6 +78,7 @@ export default function App() {
   const [clientPhone, setClientPhone] = useState('');
   const [paymentPreference, setPaymentPreference] = useState('Efectivo');
   const [paymentTiming, setPaymentTiming] = useState('Contra Entrega');
+  const [creditTerm, setCreditTerm] = useState('7 dias'); // '7 dias', '15 dias', '1 mes'
 
   const [currentOrderId, setCurrentOrderId] = useState(null);
   const [whatsappSent, setWhatsappSent] = useState(false);
@@ -127,16 +133,12 @@ export default function App() {
 
   const todayStr = new Date().toISOString().split('T')[0];
 
-  // FUNCIÓN PARA CALCULAR LA HORA MÍNIMA PERMITIDA (AÑADIENDO 40 MINUTOS SI HAY PEDIDOS CERCANOS)
   const getMinAvailableTime = () => {
     if (!deliveryDate) return "10:00";
-    
-    // Filtramos los pedidos activos para la fecha seleccionada
     const ordersOnDate = orders.filter(o => o.deliveryDate === deliveryDate && o.deliveryTime && !o.isCorrupt && o.status !== 'Cancelado' && o.status !== 'No se pudo entregar');
     if (ordersOnDate.length === 0) return "10:00";
 
-    // Buscamos la hora más tardía agendada para ese día
-    let latestTimeMinutes = 600; // 10:00 AM en minutos (10 * 60)
+    let latestTimeMinutes = 600;
     ordersOnDate.forEach(ord => {
       const [hours, minutes] = ord.deliveryTime.split(':').map(Number);
       const totalMins = hours * 60 + (minutes || 0);
@@ -145,12 +147,10 @@ export default function App() {
       }
     });
 
-    // Sumamos 40 minutos de margen por alta demanda
     const adjustedMinutes = latestTimeMinutes + 40;
     const finalHours = Math.floor(adjustedMinutes / 60);
     const finalMins = adjustedMinutes % 60;
 
-    // Formateamos a HH:MM (limitado hasta las 19:00 / 7 PM)
     if (finalHours >= 19) return "19:00";
     const formattedH = String(finalHours).padStart(2, '0');
     const formattedM = String(finalMins).padStart(2, '0');
@@ -186,6 +186,11 @@ export default function App() {
       setOrders(dbOrders);
     });
 
+    const unsubscribeUsers = onSnapshot(collection(db, 'users'), (snapshot) => {
+      const dbUsers = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setUsersList(dbUsers);
+    });
+
     const unsubscribeAuth = auth.onAuthStateChanged(async (currentUser) => {
       if (currentUser) {
         const adminEmail = 'suarez.cabrita.daniel.arturo@gmail.com';
@@ -200,31 +205,39 @@ export default function App() {
 
         const userDocRef = doc(db, 'users', currentUser.uid);
         let assignedRole = isOwner ? 'admin' : 'client';
+        let vipStatus = false;
 
         try {
           const userDoc = await getDoc(userDocRef);
-          if (userDoc.exists() && !isOwner) {
-            assignedRole = userDoc.data().role || 'client';
+          if (userDoc.exists()) {
+            if (!isOwner) {
+              assignedRole = userDoc.data().role || 'client';
+            }
+            vipStatus = userDoc.data().isVip || false;
           }
           await setDoc(userDocRef, {
             name: currentUser.displayName,
             email: currentUser.email,
             role: assignedRole,
+            isVip: vipStatus,
             lastLogin: new Date()
           }, { merge: true });
         } catch (e) {
           console.log("Error Auth sync:", e);
         }
         setUserRole(assignedRole);
+        setIsVipClient(vipStatus);
       } else {
         setUser(null);
         setUserRole('client');
+        setIsVipClient(false);
       }
     });
 
     return () => {
       unsubscribeProducts();
       unsubscribeOrders();
+      unsubscribeUsers();
       unsubscribeAuth();
     };
   }, []);
@@ -241,6 +254,17 @@ export default function App() {
     signOut(auth).catch(() => {});
     setUser(null);
     setView('catalog');
+  };
+
+  const handleToggleVip = async (targetUid, currentVipStatus) => {
+    try {
+      const userRef = doc(db, 'users', targetUid);
+      await updateDoc(userRef, { isVip: !currentVipStatus });
+      alert("✅ ¡Privilegio VIP actualizado con éxito!");
+    } catch (err) {
+      console.error(err);
+      alert("Error al actualizar privilegio.");
+    }
   };
 
   const handleResetToFactorySettings = async () => {
@@ -331,6 +355,16 @@ export default function App() {
 
     if (cart.length === 0) return;
 
+    // Calcular fecha de vencimiento si es crédito
+    let creditDueDate = null;
+    if (paymentPreference === 'Crédito') {
+      const now = new Date();
+      if (creditTerm === '7 dias') now.setDate(now.getDate() + 7);
+      else if (creditTerm === '15 dias') now.setDate(now.getDate() + 15);
+      else if (creditTerm === '1 mes') now.setMonth(now.getMonth() + 1);
+      creditDueDate = now.toISOString();
+    }
+
     const orderData = {
       clientUid: user.uid,
       clientName: user.name,
@@ -345,6 +379,8 @@ export default function App() {
       deliveryTime: deliveryTime,
       paymentPreference: paymentPreference,
       paymentTiming: paymentTiming,
+      creditTerm: paymentPreference === 'Crédito' ? creditTerm : '',
+      creditDueDate: creditDueDate,
       status: 'Pendiente',
       isPaid: false,
       paymentMethod: '',
@@ -640,6 +676,23 @@ export default function App() {
   
   const clientBlockedOrder = myOrders.find(o => o.isCorrupt === true);
 
+  // Verificación de Créditos en Mora (Vencidos + hasta 10 días extra)
+  const nowTime = new Date().getTime();
+  const clientCreditOrders = myOrders.filter(o => o.paymentPreference === 'Crédito' && !o.isPaid && !o.isCorrupt && o.creditDueDate);
+  
+  let isInGracePeriod = false;
+  let isStrictBlockedForMora = false;
+
+  clientCreditOrders.forEach(ord => {
+    const dueTime = new Date(ord.creditDueDate).getTime();
+    const diffDays = (nowTime - dueTime) / (1000 * 60 * 60 * 24);
+    if (diffDays > 0 && diffDays <= 10) {
+      isInGracePeriod = true; // 10 días extra con aviso de mora
+    } else if (diffDays > 10) {
+      isStrictBlockedForMora = true; // Bloqueo total por mora vencida
+    }
+  });
+
   return (
     <div className="min-h-screen flex flex-col bg-gray-100 text-gray-800">
       <header className="bg-[#0b6b38] text-white shadow-lg sticky top-0 z-50">
@@ -675,6 +728,7 @@ export default function App() {
                   <p className="font-bold text-white flex items-center gap-1">
                     {user.name} 
                     {userRole === 'admin' && <span className="bg-[#fbc02d] text-black text-[9px] px-1 rounded font-black">ADMIN</span>}
+                    {isVipClient && <span className="bg-amber-400 text-black text-[9px] px-1 rounded font-black">VIP</span>}
                   </p>
                   <p className="text-gray-300 text-[10px] truncate max-w-[120px]">{user.email}</p>
                 </div>
@@ -708,16 +762,28 @@ export default function App() {
       </header>
 
       <main className="max-w-6xl mx-auto w-full px-4 py-6 flex-1">
-        {clientBlockedOrder && userRole !== 'admin' ? (
+        {/* AVISO DE MORA (10 días extra) */}
+        {isInGracePeriod && userRole !== 'admin' && (
+          <div className="bg-amber-50 border-2 border-amber-400 p-4 rounded-2xl mb-6 shadow flex items-center gap-3">
+            <AlertCircle className="text-amber-600 w-8 h-8 flex-shrink-0" />
+            <div className="text-xs">
+              <p className="font-black text-amber-900 text-sm">⚠️ ¡Su cuenta está en mora, por favor pagar!</p>
+              <p className="text-amber-700">Tiene facturas de crédito pendientes. Por favor realice el pago para evitar restricciones en su cuenta.</p>
+            </div>
+          </div>
+        )}
+
+        {/* BLOQUEO POR INCIDENCIA O MORA SUPERADA */}
+        {(clientBlockedOrder || isStrictBlockedForMora) && userRole !== 'admin' ? (
           <div className="max-w-md mx-auto bg-white p-8 rounded-2xl shadow-2xl border text-center space-y-4 my-12">
             <div className="bg-red-100 text-red-700 p-4 rounded-full w-16 h-16 flex items-center justify-center mx-auto">
               <ShieldAlert size={32} />
             </div>
             <h2 className="font-black text-xl text-red-700">¡Acceso Restringido / Incidencia de Pago!</h2>
             <p className="text-xs text-gray-600">
-              Por favor comunicarse con este número, hubo un inconveniente con su pago.
+              {isStrictBlockedForMora ? "Su cuenta ha sido bloqueada por superar el tiempo límite de mora en sus créditos pendientes." : "Por favor comunicarse con este número, hubo un inconveniente con su pago."}
             </p>
-            {clientBlockedOrder.corruptReason && (
+            {clientBlockedOrder?.corruptReason && (
               <div className="bg-red-50 p-3 rounded-xl border border-red-200 text-xs text-left">
                 <p className="font-bold text-red-800">Motivo registrado:</p>
                 <p className="text-gray-700">{clientBlockedOrder.corruptReason}</p>
@@ -728,10 +794,19 @@ export default function App() {
                 )}
               </div>
             )}
+            {/* Mostrar facturas pendientes asociadas si las hay */}
+            {clientCreditOrders.map(ord => ord.invoicePhoto && (
+              <div key={ord.id} className="bg-gray-50 p-2 rounded-xl border text-xs text-left flex justify-between items-center">
+                <span>Factura Pendiente #{ord.id.slice(-6).toUpperCase()}</span>
+                <button onClick={() => setPreviewImage(ord.invoicePhoto)} className="text-indigo-600 font-bold underline flex items-center gap-1">
+                  <Eye size={12} /> Ver factura
+                </button>
+              </div>
+            ))}
             <div className="pt-2">
               <a 
                 href={`https://wa.me/584245719928?text=${encodeURIComponent(
-                  `Hola, soy el cliente *${user?.name || 'Cliente'}* (Telf: ${clientBlockedOrder.clientPhone || 'No registrado'}). Quisiera saber qué pasó con mi pago ya que me aparece una incidencia en la aplicación.`
+                  `Hola, soy el cliente *${user?.name || 'Cliente'}* (Telf: ${clientBlockedOrder?.clientPhone || 'No registrado'}). Quisiera saber qué pasó con mi pago o mis créditos vencidos.`
                 )}`}
                 target="_blank"
                 rel="noreferrer"
@@ -825,7 +900,35 @@ export default function App() {
                         <option value="Efectivo">💵 Efectivo</option>
                         <option value="Tarjeta">💳 Tarjeta</option>
                         <option value="Pago Digital">📱 Pago Digital (Yape / Transferencia)</option>
+                        <option value="Crédito">📋 Crédito (Exclusivo VIP)</option>
                       </select>
+
+                      {/* SI SELECCIONA CRÉDITO */}
+                      {paymentPreference === 'Crédito' && (
+                        isVipClient ? (
+                          <div className="space-y-1 bg-white p-2 rounded border">
+                            <label className="font-bold text-gray-700 text-[10px]">Plazo de Crédito:</label>
+                            <select value={creditTerm} onChange={e => setCreditTerm(e.target.value)} className="w-full border p-1 rounded text-xs">
+                              <option value="7 dias">Crédito a una semana (7 días)</option>
+                              <option value="15 dias">Crédito a 15 días</option>
+                              <option value="1 mes">Crédito a un mes</option>
+                            </select>
+                          </div>
+                        ) : (
+                          <div className="bg-amber-100 border border-amber-300 p-2 rounded text-[11px] text-amber-900 space-y-2">
+                            <p className="font-bold">⚠️ Opción válida para cliente con contrato (VIP).</p>
+                            <p>Comuníquese con nosotros si desea formar parte.</p>
+                            <a 
+                              href="https://wa.me/584245719928?text=Hola,%20deseo%20formar%20parte%20de%20los%20clientes%20VIP%20con%20contrato%20para%20acceder%20a%20créditos." 
+                              target="_blank" 
+                              rel="noreferrer"
+                              className="block bg-green-600 text-white font-bold py-1 px-2 rounded text-center"
+                            >
+                              📞 Contactar para ser VIP
+                            </a>
+                          </div>
+                        )
+                      )}
 
                       <select value={paymentTiming} onChange={e => setPaymentTiming(e.target.value)} className="w-full border p-1.5 rounded text-xs bg-white">
                         <option value="Contra Entrega">🚚 Contra Entrega</option>
@@ -862,7 +965,11 @@ export default function App() {
                       <span className="text-[#0b6b38] text-base">S/ {cartTotal.toFixed(2)}</span>
                     </div>
                     
-                    <button disabled={cart.length === 0} onClick={handleGenerateReceipt} className="w-full bg-[#0b6b38] text-white font-bold py-3 rounded-xl shadow">
+                    <button 
+                      disabled={cart.length === 0 || (paymentPreference === 'Crédito' && !isVipClient)} 
+                      onClick={handleGenerateReceipt} 
+                      className={`w-full font-bold py-3 rounded-xl shadow ${paymentPreference === 'Crédito' && !isVipClient ? 'bg-gray-300 text-gray-500 cursor-not-allowed' : 'bg-[#0b6b38] text-white'}`}
+                    >
                       Generar cálculo aproximado
                     </button>
                   </div>
@@ -894,7 +1001,7 @@ export default function App() {
                             <div className="flex justify-between items-center border-b pb-3">
                               <div>
                                 <p className="font-bold text-sm text-gray-800">Pedido #{order.id.slice(-6).toUpperCase()}</p>
-                                <p className="text-xs text-gray-500">Pago: <strong>{order.paymentPreference} ({order.paymentTiming})</strong></p>
+                                <p className="text-xs text-gray-500">Pago: <strong>{order.paymentPreference} {order.creditTerm ? `(${order.creditTerm})` : ''}</strong></p>
                               </div>
                               
                               <span className={`px-3 py-1 rounded-full font-black text-xs border ${
@@ -978,7 +1085,7 @@ export default function App() {
                       `🛒 *NUEVO PEDIDO - PUNTO M*\n` +
                       `👤 *Cliente:* ${user ? user.name : 'Cliente'}\n` +
                       `📞 *Teléfono:* ${clientPhone}\n` +
-                      `💳 *Método de Pago:* ${paymentPreference} (${paymentTiming})\n` +
+                      `💳 *Método de Pago:* ${paymentPreference} ${paymentPreference === 'Crédito' ? `(${creditTerm})` : ''}\n` +
                       `📅 *Entrega:* ${deliveryDate} a las ${deliveryTime}\n` +
                       `-----------------------------------\n` +
                       `📋 *Lista de Productos (Cantidades):*\n` + cart.map(i => `• ${i.qty}x ${i.name}`).join('\n') + `\n` +
@@ -1019,6 +1126,7 @@ export default function App() {
               </div>
             )}
 
+            {/* PANEL ADMIN CON PESTAÑA DE USUARIOS Y PRIVILEGIOS */}
             {view === 'admin' && userRole === 'admin' && (
               <div className="space-y-6 max-w-5xl mx-auto">
                 <div className="bg-white p-6 rounded-2xl shadow border">
@@ -1036,8 +1144,9 @@ export default function App() {
                         <RotateCcw size={14} /> {isResetting ? 'Restaurando...' : 'Restaurar Fábrica'}
                       </button>
 
-                      <div className="flex bg-gray-100 p-1 rounded-xl text-xs font-bold gap-1">
+                      <div className="flex bg-gray-100 p-1 rounded-xl text-xs font-bold gap-1 flex-wrap">
                         <button onClick={() => setAdminSubTab('orders')} className={`px-3 py-2 rounded-lg ${adminSubTab === 'orders' ? 'bg-[#0b6b38] text-white shadow' : 'text-gray-600'}`}>📦 Pedidos</button>
+                        <button onClick={() => setAdminSubTab('users')} className={`px-3 py-2 rounded-lg ${adminSubTab === 'users' ? 'bg-[#0b6b38] text-white shadow' : 'text-gray-600'}`}>👥 Usuarios</button>
                         <button onClick={() => setAdminSubTab('corrupt')} className={`px-3 py-2 rounded-lg ${adminSubTab === 'corrupt' ? 'bg-red-600 text-white shadow' : 'text-gray-600'}`}>🚫 Pagos Corruptos ({corruptOrdersList.length})</button>
                         <button onClick={() => setAdminSubTab('accounting')} className={`px-3 py-2 rounded-lg ${adminSubTab === 'accounting' ? 'bg-[#0b6b38] text-white shadow' : 'text-gray-600'}`}>📊 Contabilidad</button>
                         <button onClick={() => setAdminSubTab('returns')} className={`px-3 py-2 rounded-lg ${adminSubTab === 'returns' ? 'bg-[#0b6b38] text-white shadow' : 'text-gray-600'}`}>🔄 Devoluciones</button>
@@ -1062,7 +1171,7 @@ export default function App() {
                                   {order.isPaid ? '🟢 Pagado' : '🟡 Pendiente'}
                                 </span>
                               </div>
-                              <p className="text-gray-500">📞 {order.clientPhone} | Pago: {order.paymentPreference} ({order.paymentTiming})</p>
+                              <p className="text-gray-500">📞 {order.clientPhone} | Pago: {order.paymentPreference} {order.creditTerm ? `(${order.creditTerm})` : ''}</p>
                               <p className="text-gray-600">Items: {order.items?.map(i => `${i.qty}x ${i.name}`).join(', ')}</p>
                               <p className="font-bold text-green-800 text-xs">
                                 {order.hasExactAmount ? 'Total Definitivo:' : 'Total Aproximado:'} S/ {Number(order.total || order.approxTotal).toFixed(2)}
@@ -1156,6 +1265,76 @@ export default function App() {
                     </div>
                   )}
 
+                  {/* PESTAÑA USUARIOS Y PRIVILEGIOS VIP */}
+                  {adminSubTab === 'users' && (
+                    <div className="space-y-4">
+                      <h3 className="font-bold text-base text-gray-800 flex items-center gap-2">
+                        <Users size={20} className="text-[#0b6b38]" /> Gestión de Usuarios e Historiales
+                      </h3>
+
+                      <div className="space-y-4">
+                        {usersList.map(u => {
+                          const userOrders = orders.filter(o => o.clientEmail === u.email || o.clientUid === u.id);
+                          const userCorruptCases = userOrders.filter(o => o.isCorrupt);
+
+                          return (
+                            <div key={u.id} className="border p-4 rounded-xl bg-white shadow-sm space-y-3">
+                              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b pb-2 gap-2">
+                                <div>
+                                  <p className="font-bold text-sm text-gray-900">{u.name} ({u.email})</p>
+                                  <p className="text-xs text-gray-500">Rol: <strong>{u.role}</strong> | Estado: {u.isVip ? '⭐ Cliente VIP' : 'Cliente Estándar'}</p>
+                                </div>
+
+                                <button 
+                                  onClick={() => handleToggleVip(u.id, u.isVip)}
+                                  className={`px-3 py-2 rounded-xl font-bold text-xs flex items-center gap-1 shadow transition ${
+                                    u.isVip ? 'bg-amber-100 text-amber-800 border border-amber-300' : 'bg-[#0b6b38] text-white hover:bg-green-700'
+                                  }`}
+                                >
+                                  <Award size={14} /> {u.isVip ? 'Quitar Privilegio VIP' : 'Asignar Privilegio VIP'}
+                                </button>
+                              </div>
+
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                                <div className="bg-gray-50 p-3 rounded-lg border">
+                                  <p className="font-bold text-gray-700 mb-1">📦 Historial de Compras ({userOrders.length}):</p>
+                                  {userOrders.length === 0 ? (
+                                    <p className="text-gray-400">Sin compras registradas.</p>
+                                  ) : (
+                                    <div className="max-h-24 overflow-y-auto space-y-1">
+                                      {userOrders.map(ord => (
+                                        <div key={ord.id} className="flex justify-between border-b pb-1">
+                                          <span>#{ord.id.slice(-6)} - S/ {Number(ord.total || ord.approxTotal).toFixed(2)}</span>
+                                          <span className="font-bold text-green-700">{ord.status}</span>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+
+                                <div className="bg-red-50 p-3 rounded-lg border border-red-200">
+                                  <p className="font-bold text-red-800 mb-1">⚠️ Historial de Casos / Incidencias ({userCorruptCases.length}):</p>
+                                  {userCorruptCases.length === 0 ? (
+                                    <p className="text-gray-400">Sin incidencias registradas.</p>
+                                  ) : (
+                                    <div className="max-h-24 overflow-y-auto space-y-1">
+                                      {userCorruptCases.map(c => (
+                                        <div key={c.id} className="flex justify-between border-b border-red-200 pb-1 text-red-700">
+                                          <span>#{c.id.slice(-6)}</span>
+                                          <span className="truncate max-w-[150px]">{c.corruptReason}</span>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
                   {adminSubTab === 'corrupt' && (
                     <div className="space-y-4">
                       <h3 className="font-bold text-base text-red-700 flex items-center gap-2">
@@ -1173,6 +1352,11 @@ export default function App() {
                               {order.corruptPhoto && (
                                 <button onClick={() => setPreviewImage(order.corruptPhoto)} className="text-blue-700 font-bold underline flex items-center gap-1 cursor-pointer">
                                   <Eye size={14} /> Ver Comprobante/Efectivo con Incidencia
+                                </button>
+                              )}
+                              {order.invoicePhoto && (
+                                <button onClick={() => setPreviewImage(order.invoicePhoto)} className="text-indigo-700 font-bold underline flex items-center gap-1 cursor-pointer mt-1">
+                                  <Receipt size={14} /> Ver Factura Pendiente Asociada
                                 </button>
                               )}
                             </div>
