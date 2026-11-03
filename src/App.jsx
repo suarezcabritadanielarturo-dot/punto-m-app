@@ -94,7 +94,6 @@ export default function App() {
   const [finalAmountOrderId, setFinalAmountOrderId] = useState(null);
   const [exactFinalAmount, setExactFinalAmount] = useState('');
 
-  // Modal para Pago Corrupto / Incidencia
   const [corruptModalOpen, setCorruptModalOpen] = useState(false);
   const [corruptOrderId, setCorruptOrderId] = useState(null);
   const [corruptReason, setCorruptReason] = useState('');
@@ -309,7 +308,7 @@ export default function App() {
       paymentMethod: '',
       invoicePhoto: '',
       cashPhoto: '',
-      isCorrupt: false, // Control de pago corrupto/bloqueado
+      isCorrupt: false,
       corruptReason: '',
       corruptPhoto: '',
       failReason: '',
@@ -474,7 +473,6 @@ export default function App() {
     }
   };
 
-  // GUARDAR PAGO CORRUPTO Y BLOQUEAR CLIENTE
   const handleSaveCorruptPayment = async () => {
     if (!corruptReason.trim()) {
       alert("⚠️ Especifique el motivo del pago corrupto.");
@@ -504,7 +502,6 @@ export default function App() {
     }
   };
 
-  // DESBLOQUEAR CLIENTE Y REGISTRAR PAGO CORRECTO
   const handleUnlockAndPayCorrupt = async (orderId) => {
     const confirmUnlock = window.confirm("🔓 ¿Deseas desbloquear a este cliente y registrar su pago como correcto? Esto devolverá el caso al historial normal.");
     if (!confirmUnlock) return;
@@ -599,7 +596,6 @@ export default function App() {
   const corruptOrdersList = orders.filter(o => o.isCorrupt === true);
   const myOrders = user ? orders.filter(o => o.clientUid === user.uid || o.clientEmail === user.email) : [];
   
-  // Verificamos si el usuario actual tiene algún pedido con pago corrupto (bloqueado)
   const clientBlockedOrder = myOrders.find(o => o.isCorrupt === true);
 
   return (
@@ -670,7 +666,6 @@ export default function App() {
       </header>
 
       <main className="max-w-6xl mx-auto w-full px-4 py-6 flex-1">
-        {/* SI EL CLIENTE ESTÁ BLOQUEADO POR PAGO CORRUPTO, MOSTRAR MENSAJE Y BOTÓN DE WHATSAPP */}
         {clientBlockedOrder && userRole !== 'admin' ? (
           <div className="max-w-md mx-auto bg-white p-8 rounded-2xl shadow-2xl border text-center space-y-4 my-12">
             <div className="bg-red-100 text-red-700 p-4 rounded-full w-16 h-16 flex items-center justify-center mx-auto">
@@ -685,7 +680,7 @@ export default function App() {
                 <p className="font-bold text-red-800">Motivo registrado:</p>
                 <p className="text-gray-700">{clientBlockedOrder.corruptReason}</p>
                 {clientBlockedOrder.corruptPhoto && (
-                  <button onClick={() => setPreviewImage(clientBlockedOrder.corruptPhoto)} className="mt-2 text-xs text-blue-600 underline font-bold flex items-center gap-1">
+                  <button onClick={() => setPreviewImage(clientBlockedOrder.corruptPhoto)} className="mt-2 text-xs text-blue-600 underline font-bold flex items-center gap-1 cursor-pointer">
                     <Eye size={14} /> Ver comprobante con incidencia
                   </button>
                 )}
@@ -970,7 +965,6 @@ export default function App() {
               </div>
             )}
 
-            {/* PANEL ADMIN CON PESTAÑA DE PAGOS CORRUPTOS */}
             {view === 'admin' && userRole === 'admin' && (
               <div className="space-y-6 max-w-5xl mx-auto">
                 <div className="bg-white p-6 rounded-2xl shadow border">
@@ -1021,7 +1015,7 @@ export default function App() {
                               </p>
                               
                               {order.invoicePhoto && (
-                                <button onClick={() => setPreviewImage(order.invoicePhoto)} className="text-xs text-green-700 font-bold underline flex items-center gap-1 mt-1">
+                                <button onClick={() => setPreviewImage(order.invoicePhoto)} className="text-xs text-green-700 font-bold underline flex items-center gap-1 mt-1 cursor-pointer">
                                   <Eye size={14} /> Ver Factura Oficial Subida
                                 </button>
                               )}
@@ -1091,7 +1085,6 @@ export default function App() {
                                 <DollarSign size={14} /> Ingresar monto a pagar
                               </button>
 
-                              {/* BOTÓN NUEVO: PAGO CORRUPTO */}
                               <button 
                                 onClick={() => {
                                   setCorruptOrderId(order.id);
@@ -1109,7 +1102,6 @@ export default function App() {
                     </div>
                   )}
 
-                  {/* PESTAÑA PAGOS CORRUPTOS (ADMIN) */}
                   {adminSubTab === 'corrupt' && (
                     <div className="space-y-4">
                       <h3 className="font-bold text-base text-red-700 flex items-center gap-2">
@@ -1125,7 +1117,7 @@ export default function App() {
                               <p className="text-red-700 font-bold">⚠️ Motivo: {order.corruptReason}</p>
                               <p className="text-gray-600">Total: S/ {Number(order.total || order.approxTotal).toFixed(2)}</p>
                               {order.corruptPhoto && (
-                                <button onClick={() => setPreviewImage(order.corruptPhoto)} className="text-blue-700 font-bold underline flex items-center gap-1">
+                                <button onClick={() => setPreviewImage(order.corruptPhoto)} className="text-blue-700 font-bold underline flex items-center gap-1 cursor-pointer">
                                   <Eye size={14} /> Ver Comprobante/Efectivo con Incidencia
                                 </button>
                               )}
@@ -1187,7 +1179,6 @@ export default function App() {
               </div>
             )}
 
-            {/* MODAL PAGO CORRUPTO */}
             {corruptModalOpen && (
               <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
                 <div className="bg-white p-6 rounded-2xl max-w-md w-full shadow-2xl space-y-4">
@@ -1335,18 +1326,19 @@ export default function App() {
                 </div>
               </div>
             )}
-
-            {previewImage && (
-              <div className="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-50 p-4" onClick={() => setPreviewImage(null)}>
-                <div className="bg-white p-4 rounded-2xl max-w-lg w-full shadow-2xl relative space-y-3">
-                  <div className="flex justify-center max-h-[70vh] overflow-auto">
-                    <img src={previewImage} alt="Comprobante" className="max-w-full rounded-lg object-contain" />
-                  </div>
-                  <button onClick={() => setPreviewImage(null)} className="w-full bg-gray-800 text-white font-bold py-2 rounded-lg text-xs">Cerrar</button>
-                </div>
-              </div>
-            )}
           </>
+        )}
+
+        {/* MODAL GLOBAL DE PREVISUALIZACIÓN DE IMÁGENES */}
+        {previewImage && (
+          <div className="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-50 p-4" onClick={() => setPreviewImage(null)}>
+            <div className="bg-white p-4 rounded-2xl max-w-lg w-full shadow-2xl relative space-y-3" onClick={e => e.stopPropagation()}>
+              <div className="flex justify-center max-h-[70vh] overflow-auto">
+                <img src={previewImage} alt="Comprobante" className="max-w-full rounded-lg object-contain" />
+              </div>
+              <button onClick={() => setPreviewImage(null)} className="w-full bg-gray-800 text-white font-bold py-2 rounded-lg text-xs cursor-pointer">Cerrar</button>
+            </div>
+          </div>
         )}
       </main>
     </div>
