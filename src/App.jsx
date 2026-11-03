@@ -75,12 +75,16 @@ export default function App() {
   const [failOrderId, setFailOrderId] = useState(null);
   const [failReason, setFailReason] = useState('');
 
-  // Modal para Facturar / Subir Factura
+  // Modal para Cobro y Pago
+  const [payModalOpen, setPayModalOpen] = useState(false);
+  const [payOrderId, setPayOrderId] = useState(null);
+  const [selectedPayMethodAdmin, setSelectedPayMethodAdmin] = useState('');
+  const [cashPhoto, setCashPhoto] = useState('');
+
+  // Modal Independiente para Subir Factura
   const [invoiceModalOpen, setInvoiceModalOpen] = useState(false);
   const [invoiceOrderId, setInvoiceOrderId] = useState(null);
   const [invoicePhoto, setInvoicePhoto] = useState('');
-  const [selectedPayMethodAdmin, setSelectedPayMethodAdmin] = useState('');
-  const [cashPhoto, setCashPhoto] = useState('');
 
   // Modal para Ingresar Monto Definitivo tras Facturar
   const [finalAmountModalOpen, setFinalAmountModalOpen] = useState(false);
@@ -283,8 +287,8 @@ export default function App() {
       clientEmail: user.email,
       clientPhone: clientPhone,
       items: cart,
-      approxTotal: cartTotal, // Guardamos explícitamente el aproximado
-      total: cartTotal, // Se actualizará al ingresar el monto real facturado
+      approxTotal: cartTotal,
+      total: cartTotal,
       hasExactAmount: false,
       location: clientLocation || null,
       deliveryDate: deliveryDate,
@@ -294,7 +298,7 @@ export default function App() {
       status: 'Pendiente',
       isPaid: false,
       paymentMethod: '',
-      invoicePhoto: '',
+      invoicePhoto: '', // Campo independiente para la factura
       cashPhoto: '',
       failReason: '',
       returnStatus: 'No aplica',
@@ -381,8 +385,8 @@ export default function App() {
     }
   };
 
-  // CONFIRMAR FACTURACIÓN Y PAGO DESDE EL ADMIN
-  const handleConfirmInvoice = async () => {
+  // CONFIRMAR PAGO DESDE EL ADMIN
+  const handleConfirmAdminPayment = async () => {
     if (!selectedPayMethodAdmin) {
       alert("Selecciona la opción de pago.");
       return;
@@ -391,23 +395,40 @@ export default function App() {
       alert("⚠️ Sube la foto del efectivo recibido.");
       return;
     }
-    if (!invoicePhoto) {
-      alert("⚠️ Por favor sube la foto de la factura.");
-      return;
-    }
 
-    await handleUpdateOrderStatus(invoiceOrderId, 'Facturado', {
+    await handleUpdateOrderStatus(payOrderId, 'Pagado', {
       isPaid: true,
       paymentMethod: selectedPayMethodAdmin,
-      invoicePhoto: invoicePhoto,
       cashPhoto: selectedPayMethodAdmin === 'Efectivo' ? cashPhoto : ''
     });
 
-    setInvoiceModalOpen(false);
-    setInvoiceOrderId(null);
-    setInvoicePhoto('');
+    setPayModalOpen(false);
+    setPayOrderId(null);
     setCashPhoto('');
     setSelectedPayMethodAdmin('');
+  };
+
+  // GUARDAR FACTURA INDEPENDIENTE
+  const handleSaveInvoice = async () => {
+    if (!invoicePhoto) {
+      alert("⚠️ Sube la foto o archivo de la factura.");
+      return;
+    }
+
+    try {
+      const orderRef = doc(db, 'orders', invoiceOrderId);
+      await updateDoc(orderRef, {
+        invoicePhoto: invoicePhoto,
+        status: 'Facturado'
+      });
+      setInvoiceModalOpen(false);
+      setInvoiceOrderId(null);
+      setInvoicePhoto('');
+      alert("✅ ¡Factura subida con éxito!");
+    } catch (err) {
+      console.error(err);
+      alert("Error al subir la factura.");
+    }
   };
 
   // GUARDAR MONTO DEFINITIVO DE LA FACTURA
@@ -692,7 +713,7 @@ export default function App() {
           </div>
         )}
 
-        {/* SEGUIMIENTO DE PEDIDOS CON ESTADO DE PAGO Y MONTO REAL VS APROXIMADO */}
+        {/* SEGUIMIENTO DE PEDIDOS CON VISUALIZACIÓN DE FACTURA INDEPENDIENTE */}
         {view === 'tracking' && (
           <div className="max-w-3xl mx-auto space-y-6">
             <div className="bg-white p-6 rounded-2xl shadow border">
@@ -744,10 +765,11 @@ export default function App() {
                           </div>
                         )}
 
+                        {/* VISUALIZACIÓN DE LA FACTURA INDEPENDIENTE */}
                         {order.invoicePhoto && (
                           <div className="bg-green-50 border border-green-200 p-3 rounded-xl text-xs flex justify-between items-center">
                             <p className="font-bold text-green-900 flex items-center gap-1.5">
-                              <Receipt size={16} className="text-green-700" /> Factura Emitida y Disponible
+                              <Receipt size={16} className="text-green-700" /> Factura Oficial Emitida
                             </p>
                             <button onClick={() => setPreviewImage(order.invoicePhoto)} className="bg-green-600 text-white font-bold px-3 py-1.5 rounded-lg text-xs flex items-center gap-1 shadow">
                               <Eye size={14} /> Ver Factura
@@ -791,7 +813,7 @@ export default function App() {
           </div>
         )}
 
-        {/* PANEL ADMIN CON BOTÓN DE INGRESAR MONTO DEFINITIVO */}
+        {/* PANEL ADMIN CON BOTONES SEPARADOS PARA PAGO, FACTURA Y MONTO */}
         {view === 'admin' && userRole === 'admin' && (
           <div className="space-y-6 max-w-5xl mx-auto">
             <div className="bg-white p-6 rounded-2xl shadow border">
@@ -831,7 +853,7 @@ export default function App() {
                           
                           {order.invoicePhoto && (
                             <button onClick={() => setPreviewImage(order.invoicePhoto)} className="text-xs text-green-700 font-bold underline flex items-center gap-1 mt-1">
-                              <Eye size={14} /> Ver Factura Subida
+                              <Eye size={14} /> Ver Factura Oficial Subida
                             </button>
                           )}
                         </div>
@@ -859,42 +881,50 @@ export default function App() {
                         </div>
                       </div>
 
-                      {/* ZONA INFERIOR: FACTURAR Y BOTÓN DE INGRESAR MONTO DEFINITIVO */}
+                      {/* ZONA INFERIOR: BOTONES SEPARADOS PARA PAGO, SUBIR FACTURA Y MONTO DEFINITIVO */}
                       <div className="bg-gray-50 p-3 rounded-xl border flex flex-col sm:flex-row justify-between items-center gap-3">
                         <div className="text-xs">
-                          <p className="font-bold text-gray-700">Estado de Facturación y Pago:</p>
-                          <p className="text-gray-500">{order.isPaid ? 'Factura cargada. Puedes actualizar el monto exacto si difiere del aproximado.' : 'Pendiente de facturar.'}</p>
+                          <p className="font-bold text-gray-700">Gestión Administrativa:</p>
+                          <p className="text-gray-500">Registra el pago, sube la factura independiente y define el monto final.</p>
                         </div>
 
-                        <div className="flex items-center gap-2">
+                        <div className="flex flex-wrap items-center gap-2">
+                          {/* 1. Botón Marcar Pagado */}
+                          <button 
+                            onClick={() => {
+                              setPayOrderId(order.id);
+                              setSelectedPayMethodAdmin(order.paymentPreference || 'Efectivo');
+                              setPayModalOpen(true);
+                            }}
+                            className={`px-3 py-2 rounded-xl font-bold text-xs flex items-center gap-1 shadow ${
+                              order.isPaid ? 'bg-green-100 text-green-800 border border-green-300' : 'bg-blue-600 text-white hover:bg-blue-700'
+                            }`}
+                          >
+                            <CreditCard size={14} /> {order.isPaid ? '✅ Pago Registrado' : '💵 Registrar Pago'}
+                          </button>
+
+                          {/* 2. Botón Subir Factura Independiente */}
                           <button 
                             onClick={() => {
                               setInvoiceOrderId(order.id);
-                              setSelectedPayMethodAdmin(order.paymentPreference || 'Efectivo');
                               setInvoiceModalOpen(true);
                             }}
-                            className={`px-4 py-2 rounded-xl font-bold text-xs flex items-center gap-1.5 shadow transition ${
-                              order.isPaid 
-                                ? 'bg-blue-100 text-blue-800 hover:bg-blue-200 border border-blue-300' 
-                                : 'bg-blue-600 hover:bg-blue-700 text-white'
-                            }`}
+                            className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-3 py-2 rounded-xl text-xs flex items-center gap-1 shadow"
                           >
-                            <Receipt size={16} /> {order.isPaid ? '🔄 Actualizar Factura / Pago' : '📄 Facturar y Marcar Pagado'}
+                            <Receipt size={14} /> {order.invoicePhoto ? '🔄 Cambiar Factura' : '📄 Subir Factura'}
                           </button>
 
-                          {/* BOTÓN NUEVO: INGRESAR MONTO DEFINITIVO */}
-                          {order.isPaid && (
-                            <button 
-                              onClick={() => {
-                                setFinalAmountOrderId(order.id);
-                                setExactFinalAmount(order.total || order.approxTotal || '');
-                                setFinalAmountModalOpen(true);
-                              }}
-                              className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-4 py-2 rounded-xl text-xs flex items-center gap-1.5 shadow"
-                            >
-                              <DollarSign size={16} /> Ingresar monto a pagar
-                            </button>
-                          )}
+                          {/* 3. Botón Ingresar Monto Definitivo */}
+                          <button 
+                            onClick={() => {
+                              setFinalAmountOrderId(order.id);
+                              setExactFinalAmount(order.total || order.approxTotal || '');
+                              setFinalAmountModalOpen(true);
+                            }}
+                            className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-3 py-2 rounded-xl text-xs flex items-center gap-1 shadow"
+                          >
+                            <DollarSign size={14} /> Ingresar monto a pagar
+                          </button>
                         </div>
                       </div>
 
@@ -945,14 +975,14 @@ export default function App() {
           </div>
         )}
 
-        {/* MODAL FACTURAR / SUBIR FACTURA Y COBRO */}
-        {invoiceModalOpen && (
+        {/* MODAL REGISTRAR PAGO (CON FOTO DE EFECTIVO SI APLICA) */}
+        {payModalOpen && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
             <div className="bg-white p-6 rounded-2xl max-w-md w-full shadow-2xl space-y-4">
               <h3 className="font-bold text-base text-blue-700 flex items-center gap-2">
-                <Receipt size={20} /> Facturar Pedido y Registrar Pago
+                <CreditCard size={20} /> Registrar Cobro y Marcar Pagado
               </h3>
-              <p className="text-xs text-gray-600">Selecciona el método de cobro, sube la foto de la factura y confirma:</p>
+              <p className="text-xs text-gray-600">Selecciona el método de pago recibido:</p>
 
               <div className="grid grid-cols-3 gap-2">
                 <button type="button" onClick={() => setSelectedPayMethodAdmin('Efectivo')} className={`p-2.5 rounded-xl border font-bold text-xs flex flex-col items-center justify-center gap-1 ${selectedPayMethodAdmin === 'Efectivo' ? 'bg-green-600 text-white shadow' : 'bg-gray-50'}`}>
@@ -976,17 +1006,34 @@ export default function App() {
                 </div>
               )}
 
-              <div className="space-y-1 bg-blue-50 p-2.5 rounded-xl border border-blue-200 text-xs">
-                <p className="font-bold text-blue-900 flex items-center gap-1"><Receipt size={14} /> Subir Foto de la Factura: *</p>
-                <label className="cursor-pointer bg-white border-2 border-dashed border-blue-400 text-gray-800 font-bold py-2 px-2 rounded-lg flex items-center justify-center gap-1">
-                  <Upload size={14} /> <span>{invoicePhoto ? '✅ Factura cargada (Cambiar)' : 'Seleccionar foto de factura'}</span>
+              <div className="flex justify-end gap-2 pt-2">
+                <button onClick={() => { setPayModalOpen(false); setPayOrderId(null); setCashPhoto(''); }} className="bg-gray-200 text-gray-700 font-bold px-4 py-2 rounded-lg text-xs">Cancelar</button>
+                <button onClick={handleConfirmAdminPayment} className="bg-green-600 hover:bg-green-700 text-white font-bold px-4 py-2 rounded-lg text-xs shadow">Guardar Pago</button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* MODAL INDEPENDIENTE PARA SUBIR FACTURA */}
+        {invoiceModalOpen && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white p-6 rounded-2xl max-w-md w-full shadow-2xl space-y-4">
+              <h3 className="font-bold text-base text-indigo-700 flex items-center gap-2">
+                <Receipt size={20} /> Subir Factura Oficial
+              </h3>
+              <p className="text-xs text-gray-600">Sube la foto o archivo de la factura que el cliente podrá visualizar en su seguimiento:</p>
+
+              <div className="space-y-1 bg-indigo-50 p-3 rounded-xl border border-indigo-200 text-xs">
+                <p className="font-bold text-indigo-900 flex items-center gap-1"><Receipt size={14} /> Seleccionar Factura: *</p>
+                <label className="cursor-pointer bg-white border-2 border-dashed border-indigo-400 text-gray-800 font-bold py-3 px-3 rounded-lg flex items-center justify-center gap-1">
+                  <Upload size={16} /> <span>{invoicePhoto ? '✅ Factura cargada (Cambiar)' : 'Elegir foto de la factura'}</span>
                   <input type="file" accept="image/*" onChange={handleInvoicePhotoUpload} className="hidden" />
                 </label>
               </div>
 
               <div className="flex justify-end gap-2 pt-2">
-                <button onClick={() => { setInvoiceModalOpen(false); setInvoiceOrderId(null); setInvoicePhoto(''); setCashPhoto(''); }} className="bg-gray-200 text-gray-700 font-bold px-4 py-2 rounded-lg text-xs">Cancelar</button>
-                <button onClick={handleConfirmInvoice} className="bg-green-600 hover:bg-green-700 text-white font-bold px-4 py-2 rounded-lg text-xs shadow">Guardar y Facturar</button>
+                <button onClick={() => { setInvoiceModalOpen(false); setInvoiceOrderId(null); setInvoicePhoto(''); }} className="bg-gray-200 text-gray-700 font-bold px-4 py-2 rounded-lg text-xs">Cancelar</button>
+                <button onClick={handleSaveInvoice} className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-4 py-2 rounded-lg text-xs shadow">Guardar Factura</button>
               </div>
             </div>
           </div>
@@ -1024,7 +1071,7 @@ export default function App() {
               <h3 className="font-bold text-base text-red-600">Motivo de No Entrega</h3>
               <textarea rows="3" value={failReason} onChange={e => setFailReason(e.target.value)} placeholder="Escribe el motivo..." className="w-full border p-3 rounded-lg text-xs"></textarea>
               <div className="flex justify-end gap-2">
-                <button onClick={() => setFailModalOpen(false)} className="bg-gray-200 text-gray-700 font-bold px-4 py-2 rounded-lg text-xs">Cancelar</button>
+                <button onClick={() => setFailModalOpen(false)} className="bg-gray-200 px-4 py-2 rounded-lg text-xs">Cancelar</button>
                 <button onClick={handleSaveFailReason} className="bg-red-600 text-white px-4 py-2 rounded-lg text-xs font-bold">Guardar</button>
               </div>
             </div>
@@ -1040,7 +1087,7 @@ export default function App() {
                 <input type="file" accept="image/*" onChange={handleReturnProofUpload} className="hidden" />
               </label>
               <div className="flex justify-end gap-2">
-                <button onClick={() => setReturnModalOpen(false)} className="bg-gray-200 text-gray-700 font-bold px-4 py-2 rounded-lg text-xs">Cancelar</button>
+                <button onClick={() => setReturnModalOpen(false)} className="bg-gray-200 px-4 py-2 rounded-lg text-xs">Cancelar</button>
                 <button onClick={handleSaveReturnProof} className="bg-green-600 text-white font-bold px-4 py-2 rounded-lg text-xs font-bold">Confirmar</button>
               </div>
             </div>
